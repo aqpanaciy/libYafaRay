@@ -166,29 +166,30 @@ to compare overall presets; use individual CLI options to isolate one setting.
 The total script time also includes PNG generation, while per-profile CSV times
 continue to measure only their individual render invocations.
 
-Measured on this machine on 3 November 2026, with the installed TDM-GCC-64
-Release shared library, 480 x 360 output and `-Threads -1` (8 detected workers):
+Measured on this machine on 3 November 2026 for the textured cube with mirror
+and glass spheres, with the installed TDM-GCC-64 Release shared library,
+480 x 360 output and `-Threads -1` (8 detected workers).
+Run directory: `build/quality-comparison/20261103-202317-707`.
 
 | Profile | Elapsed wall time | Renderer-only time |
 | --- | --- | --- |
-| preview | 1.83 s | 0.758 s |
-| baseline | 20.15 s | 19.071 s |
-| quality | 88.46 s | 87.432 s |
-| Entire script | 110.50 s (1 min 50.5 s) | — |
+| preview | 1.92 s | 0.928 s |
+| baseline | 27.57 s | 26.588 s |
+| quality | 133.98 s | 133.019 s |
+| Entire script, including comparison PNGs | 164.79 s (2 min 44.79 s) | — |
 
-Budget approximately 2 minutes for this complete set under similar conditions.
+Budget approximately 3 minutes for this complete set under similar conditions.
 This is a single measured run, not a guarantee; worker count, CPU load, hardware
 and build configuration affect time. Increasing several sample counts together
 does not produce a simple linear runtime increase. Build/configuration time is
 not included because the script uses the already-built example.
-These measurements predate automatic PNG generation; generating both PNGs from
-the existing images adds a small conversion overhead to future full runs.
+The total includes automatic PNG generation and headings; per-profile times
+include the corresponding xmake launch, render and TGA saving.
 
 ### Visual comparison: preview, baseline and quality
 
-These reference images and timings show the earlier, untextured red cube without
-the spheres. New runs use the checkerboard texture and both spheres described
-below; their timings may differ.
+These reference images and timings show the current scene: the checkerboard
+cube, mirror sphere and glass sphere, rendered in the run identified above.
 
 Left to right: **preview — baseline — quality**, from the same measured run
 above. Each panel shows the original 480 x 360 render, converted losslessly
@@ -197,24 +198,26 @@ and elapsed time in a heading above it. Times include launch and TGA saving.
 
 ![Preview, baseline and quality side by side](images/quality-comparison.png)
 
-The same crop of the dark cube face and shadow is enlarged 3x below, in the
-same order, using nearest-neighbor scaling so smoothing does not hide noise.
+The same crop of the dark cube face, spheres and nearby floor is enlarged 3x
+below, in the same order, using nearest-neighbor scaling so smoothing does not
+hide noise. The fixed crop now also exposes noise in glass and reflections.
 
-![Dark face and shadow: preview, baseline and quality at 3x](images/quality-comparison-detail.png)
+![Dark face, spheres and floor: preview, baseline and quality at 3x](images/quality-comparison-detail.png)
 
 | Profile | Elapsed time | Visible quality | When to use it |
 | --- | --- | --- | --- |
-| preview | 1.83 s | Strong grain on the cube, floor and penumbra; lighting and composition are already clear | Quick iteration on geometry, camera and lighting |
-| baseline | 20.15 s | A large reduction in noise; almost smooth surfaces and a clearly readable soft shadow | Routine evaluation and most finished images of this simple scene |
-| quality | 88.46 s | Cleaner dark face and smoother penumbra; the improvement is subtle at normal display size | Final output when inspecting enlarged details or when residual noise matters |
+| preview | 1.92 s | Strong grain on the dark cube face, floor, glass and reflections; composition and material differences are clear | Quick iteration on geometry, camera, textures and lighting |
+| baseline | 27.57 s | Much cleaner cube, floor and mirror; visible grain remains in glass and its reflection | Routine evaluation and an effective working preview of the full scene |
+| quality | 133.98 s | Cleaner dark face and reflections; glass still has some noise, especially when enlarged | Final output when the extra cleanliness matters, with further sampling potentially needed for glass |
 
 For this scene, **baseline offers the best balance of quality and time**.
 The jump from preview to baseline is clearly visible and worthwhile for a
-finished image. Quality costs about **4.4 times** as much as baseline, while
-its improvement is mainly visible in the enlarged crop. Use preview while
-adjusting the scene, baseline to judge the result, and quality selectively for
-the final render. This conclusion applies to this scene and resolution; more
-complex lighting can need different sampling settings.
+finished image. Quality costs about **4.9 times** as much as baseline. Its
+improvement is clearest in the enlarged dark face and reflections; it does not
+make the glass completely noise-free. Use preview while adjusting the scene,
+baseline to judge the result, and quality selectively for the final render.
+This conclusion applies to this scene and resolution; more complex lighting
+can need different sampling settings.
 
 These images are documentation assets stored outside the ignored build tree,
 so cleaning generated renders does not remove this comparison.
@@ -230,8 +233,8 @@ executable launches need this DLL directory and the toolchain runtimes in PATH.
 
 1. Create the logger, scene and parameter maps.
 2. Generate a checkerboard image in memory, create its texture and material,
-   and create triangle meshes for the cube, floor and emitter, plus an analytic
-   mirror and glass spheres as analytic primitives.
+   and create triangle meshes for the cube, floor and emitter, plus mirror and
+   glass spheres as analytic primitives.
 3. Add an area light linked to the emitter mesh and a constant background.
 4. Configure path tracing, the film, anti-aliasing and perspective camera.
 5. Attach a TGA output, preprocess the scene and render.
@@ -372,7 +375,7 @@ Parameter names and behavior were checked against this repository's
 Verified on 3 November 2026 using the installed shared library from commit
 `8f4906ae88f8a527bbce37991a95e3e3857cb9ac`, TDM-GCC-64 10.3.0 and xmake 3.1.2:
 build and rendering succeeded; the TGA was decoded and visually inspected.
-The updated area-light/path-tracing scene rendered in approximately 41 seconds
-on this machine with two render threads. The shadow has a visible penumbra and
-the formerly black cube face receives reflected light from the floor. Timing
-depends on hardware; some Monte Carlo noise remains at these preview settings.
+The current textured scene with both spheres was verified in all three profiles;
+the measured times are listed above. The shadow has a visible penumbra, the dark
+cube face receives reflected light, and the spheres show reflection and
+refraction. Timing depends on hardware; glass retains some Monte Carlo noise.
