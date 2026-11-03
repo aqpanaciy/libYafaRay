@@ -6,3 +6,4 @@ make*
 !/.gitattributes
 !/cmake
 !/CMakePresets.json
+!/examples/texture_horizon/build_opencv.ps1

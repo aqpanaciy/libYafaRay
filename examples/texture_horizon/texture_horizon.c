@@ -11,6 +11,15 @@
 #define WIDTH 800
 #define HEIGHT 500
 
+static int mipmap_unavailable = 0;
+
+static void log_callback(yafaray_LogLevel level, size_t datetime,
+                         const char *time_of_day, const char *message, void *data)
+{
+    (void)level; (void)datetime; (void)time_of_day; (void)data;
+    if(message && strstr(message, "cannot generate mipmaps")) mipmap_unavailable = 1;
+}
+
 static int ok(yafaray_ResultFlags result)
 {
     return !(result & (YAFARAY_RESULT_ERROR_TYPE_UNKNOWN_PARAM |
@@ -37,7 +46,8 @@ static int integer(const char *text, int threads, int *value)
 static void usage(void)
 {
     puts("Usage: yafaray_texture_horizon [output.tga] [options]\n"
-         "  --filter none|bilinear|bicubic  Texture interpolation (default bilinear)\n"
+         "  --filter none|bilinear|bicubic|mipmap_trilinear|mipmap_ewa\n"
+         "                                Texture interpolation (default bilinear)\n"
          "  --aa-samples N                 Camera samples per pixel (default 16)\n"
          "  --threads N                    Workers (default -1 = auto)\n"
          "  --help                         Show help\n"
@@ -73,7 +83,11 @@ static int surface(yafaray_Scene *scene, yafaray_ParamMap *p,
     yafaray_setParamMapString(p, "type", "image");
     yafaray_setParamMapString(p, "image_name", name);
     yafaray_setParamMapString(p, "interpolate", filter);
-    if(!ok(yafaray_createTexture(scene, name, p))) return 0;
+    if(!ok(yafaray_createTexture(scene, name, p)) || mipmap_unavailable)
+    {
+        fputs("Texture creation failed; mipmap filters require an OpenCV-enabled libYafaRay.\n", stderr);
+        return 0;
+    }
 
     yafaray_clearParamMapList(nodes);
     yafaray_clearParamMap(p);
@@ -142,15 +156,16 @@ int main(int argc, char **argv)
         { fprintf(stderr, "Unexpected argument: %s\n", arg); return EXIT_FAILURE; }
         else { output = arg; output_set = 1; }
     }
-    if(strcmp(filter, "none") && strcmp(filter, "bilinear") && strcmp(filter, "bicubic"))
-    { fputs("Filter must be none, bilinear or bicubic.\n", stderr); return EXIT_FAILURE; }
+    if(strcmp(filter, "none") && strcmp(filter, "bilinear") && strcmp(filter, "bicubic") &&
+       strcmp(filter, "mipmap_trilinear") && strcmp(filter, "mipmap_ewa"))
+    { fputs("Unknown texture filter; use --help.\n", stderr); return EXIT_FAILURE; }
     if(strlen(output) < 4 || strcmp(output + strlen(output) - 4, ".tga"))
     { fputs("Output must end in .tga.\n", stderr); return EXIT_FAILURE; }
     if(yafaray_getVersionMajor() != YAFARAY_C_API_VERSION_MAJOR) return EXIT_FAILURE;
     printf("Filter=%s AA_minsamples=%d threads=%d; floor period=2, ceiling period=3.4\n", filter, aa, threads);
-    logger = yafaray_createLogger("texture_horizon", NULL, NULL, YAFARAY_DISPLAY_CONSOLE_NORMAL);
+    logger = yafaray_createLogger("texture_horizon", log_callback, NULL, YAFARAY_DISPLAY_CONSOLE_NORMAL);
     if(!logger) goto cleanup;
-    yafaray_setConsoleVerbosityLevel(logger, YAFARAY_LOG_LEVEL_INFO);
+    yafaray_setConsoleVerbosityLevel(logger, YAFARAY_LOG_LEVEL_VERBOSE);
     p = yafaray_createParamMap();
     nodes = yafaray_createParamMapList();
     scene = yafaray_createScene(logger, "floor_and_ceiling");

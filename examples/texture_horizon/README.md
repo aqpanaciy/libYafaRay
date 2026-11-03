@@ -47,6 +47,8 @@ Options follow the target name, accept separate values, and need no rebuild:
 | `--filter none` | — | Nearest texel; no texture interpolation |
 | `--filter bilinear` | `bilinear` | Blend four neighboring texels |
 | `--filter bicubic` | — | Cubic interpolation of neighboring texels |
+| `--filter mipmap_trilinear` | — | Trilinear mipmap filtering; requires OpenCV-enabled DLL |
+| `--filter mipmap_ewa` | — | Elliptical weighted average mipmap filtering; requires OpenCV-enabled DLL |
 | `--aa-samples N` | `16` | Positive integer; film `AA_minsamples`, one AA pass |
 | `--threads N` | `-1` | Positive worker count, or `-1` for auto |
 | `--help` | — | Usage without rendering |
@@ -97,14 +99,101 @@ texture interpolation. Mipmaps prefilter progressively smaller images; EWA uses
 an anisotropic footprint, particularly relevant at grazing angles. Proper use
 also requires texture-coordinate ray differentials (this example supplies UVs).
 
-However, **the currently installed shared library has OpenCV disabled**.
+The original `build/install/tdm-gcc64-shared` installation has OpenCV disabled.
+Use the separate `tdm-gcc64-shared-opencv` installation below for mipmap filters.
 `image_manipulation::generateMipMaps` in `src/image/image_manipulation.cc`
 requires OpenCV and otherwise returns an empty mipmap list with a warning.
-This example therefore accepts only the three available base-image filters;
-it does not pretend to compare working mipmap filters. Enabling and verifying
-OpenCV in a separate library configuration would be the next experiment.
+The example detects that warning during texture creation and stops before
+rendering, instead of attempting to sample an unavailable mipmap chain.
 
 The present example keeps the library's existing CMake build unchanged.
+
+### Build OpenCV and a separate shared libYafaRay
+
+From the repository root in PowerShell:
+
+```powershell
+.\examples\texture_horizon\build_opencv.ps1
+$cmake = 'C:/Program Files/CMake/bin/cmake.exe'
+& $cmake --preset tdm-gcc64-shared-opencv
+& $cmake --build --preset tdm-gcc64-shared-opencv --parallel 4
+& $cmake --install build/tdm-gcc64-shared-opencv
+```
+
+The script downloads the pinned OpenCV 4.10.0 source archive, verifies SHA256,
+and builds static `core`, `imgproc` and `photo` modules using the same
+`C:/temp/TDM-GCC-64` compiler. It installs to
+`build/install/opencv-4.10.0-tdm-gcc64`. These are linked into the separate
+shared libYafaRay at `build/install/tdm-gcc64-shared-opencv`; the original
+installation is retained. The first source build takes much longer than a render.
+OpenCV tests, examples, Python bindings, IPP and OpenCL are disabled.
+
+Select this DLL installation for the example:
+
+```powershell
+Set-Location examples/texture_horizon
+xmake f -p mingw -a x86_64 -m release --sdk=C:/temp/TDM-GCC-64 --yafaray_prefix=../../build/install/tdm-gcc64-shared-opencv
+xmake
+.\compare_filters.ps1 -AaSamples 16 -Threads -1
+```
+
+The comparison runs `bilinear`, `mipmap_trilinear` and `mipmap_ewa` sequentially
+at the same resolution, geometry, UVs, AA count and worker count. It saves TGA,
+individual PNGs, verbose logs, `timings.csv`, a labeled side-by-side
+`comparison.png`, and `comparison-horizon.png` (the middle 400 x 120 region
+enlarged 2x without smoothing) in a timestamped `build/filter-comparison` folder.
+PNG generation needs Python 3 and Windows .NET System.Drawing; no Python image
+packages are required. Elapsed times in headings include launch and TGA saving.
+Logs should confirm mipmap generation, rather than report the missing-OpenCV warning.
+
+The scene automatically enables ray differentials when it contains mipmapped
+textures; UV coordinates let the mapper compute their pixel footprints.
+Trilinear chooses/blends isotropic mip levels, often blurring grazing-angle
+detail. EWA adapts to an elongated footprint, aiming to preserve more detail
+while suppressing aliasing. Neither changes the geometry or either texture period.
+
+### Measured comparison with OpenCV
+
+All three modes were run with the **same OpenCV-enabled DLL**, 800 x 500 output,
+16 camera samples per pixel and 8 automatically detected render workers on
+3 November 2026. OpenCV 4.10.0 was built from source using TDM-GCC-64 10.3.0;
+libYafaRay identifies itself as `4.0.0-pre-alpha+git.g5448d81b.dirty`.
+The comparison run is `build/filter-comparison/20261103-205949-016`.
+Both mipmap modes logged 6 generated levels per texture and enabled ray
+differentials. No denoising, extra blur or color correction was applied.
+
+| Filter | Renderer-only time | Launch + render + TGA save | Observed result |
+| --- | --- | --- | --- |
+| `bilinear` | 2.558 s | 3.775 s | Sharp nearby cells, but grain/moire in the horizon band |
+| `mipmap_trilinear` | 3.756 s | 4.973 s | Horizon converges to a stable average; visible isotropic blur starts earlier |
+| `mipmap_ewa` | 7.828 s | 9.271 s | More detail before the horizon, but invalid bright colored bands at the extreme grazing angle |
+
+Left to right: **bilinear — mipmap_trilinear — mipmap_ewa**.
+Headings display elapsed time including launch and saving, rounded to two decimals.
+
+![Three texture filters at the same AA settings](images/filter-comparison.png)
+
+The same horizon region at 2x enlargement without smoothing:
+
+![Horizon detail: bilinear, Trilinear and EWA](images/filter-comparison-horizon.png)
+
+**For this scene and library revision, use Trilinear for correct horizon
+smoothing.** Its renderer time is about 1.5x Bilinear's, with a substantial
+reduction in aliasing at the cost of blur. Bilinear remains useful as the aliasing
+reference. EWA takes about 3.1x Bilinear's renderer time here, but its output
+cannot be considered a valid quality improvement because of the colored bands.
+
+The EWA artifact was reproduced in a second independent render with the same
+settings (`build/ewa-repeat.tga`); the bands persisted while their colors/pattern
+changed. These are not colors in either source texture and are not normal moire.
+This indicates an implementation defect in the tested EWA path, rather than a
+general limitation of the EWA filtering method. Source inspection found suspicious
+highest-mipmap indexing in `ImageTexture::ewaEllipticCalculation`, but the exact
+cause has not been confirmed by a targeted fix. The library's filtering source
+was not modified for this comparison. The PNGs deliberately retain the artifact.
+
+The comparison images are kept in `images/` so cleaning `build/` does not remove
+the documented result. Timings are a single local measurement, not a guarantee.
 
 ## Verified output
 
