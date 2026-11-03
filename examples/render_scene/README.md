@@ -141,6 +141,36 @@ and build configuration affect time. Increasing several sample counts together
 does not produce a simple linear runtime increase. Build/configuration time is
 not included because the script uses the already-built example.
 
+### Visual comparison: preview, baseline and quality
+
+Left to right: **preview — baseline — quality**, from the same measured run
+above. Each panel shows the original 480 x 360 render, converted losslessly
+from TGA to PNG for display in this README.
+
+![Preview, baseline and quality side by side](images/quality-comparison.png)
+
+The same crop of the dark cube face and shadow is enlarged 3x below, in the
+same order, using nearest-neighbor scaling so smoothing does not hide noise.
+
+![Dark face and shadow: preview, baseline and quality at 3x](images/quality-comparison-detail.png)
+
+| Profile | Elapsed time | Visible quality | When to use it |
+| --- | --- | --- | --- |
+| preview | 1.83 s | Strong grain on the cube, floor and penumbra; lighting and composition are already clear | Quick iteration on geometry, camera and lighting |
+| baseline | 20.15 s | A large reduction in noise; almost smooth surfaces and a clearly readable soft shadow | Routine evaluation and most finished images of this simple scene |
+| quality | 88.46 s | Cleaner dark face and smoother penumbra; the improvement is subtle at normal display size | Final output when inspecting enlarged details or when residual noise matters |
+
+For this scene, **baseline offers the best balance of quality and time**.
+The jump from preview to baseline is clearly visible and worthwhile for a
+finished image. Quality costs about **4.4 times** as much as baseline, while
+its improvement is mainly visible in the enlarged crop. Use preview while
+adjusting the scene, baseline to judge the result, and quality selectively for
+the final render. This conclusion applies to this scene and resolution; more
+complex lighting can need different sampling settings.
+
+These images are documentation assets stored outside the ignored build tree,
+so cleaning generated renders does not remove this comparison.
+
 Only installed headers and `lib/liblibyafaray4.dll.a` are used for compilation and
 linking. `xmake run` adds the installation's `bin` directory to the child process's
 PATH for loading `libyafaray4.dll`; the global environment is unchanged. Direct
