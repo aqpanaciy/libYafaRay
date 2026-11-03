@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <float.h>
 #include <yafaray_c_api.h>
 
 #define WIDTH 800
@@ -48,6 +49,7 @@ static void usage(void)
     puts("Usage: yafaray_texture_horizon [output.tga] [options]\n"
          "  --filter none|bilinear|bicubic|mipmap_trilinear|mipmap_ewa\n"
          "                                Texture interpolation (default bilinear)\n"
+         "  --ewa-max-anisotropy N         EWA anisotropy limit, >= 1 (default 8)\n"
          "  --aa-samples N                 Camera samples per pixel (default 16)\n"
          "  --threads N                    Workers (default -1 = auto)\n"
          "  --help                         Show help\n"
@@ -56,7 +58,7 @@ static void usage(void)
 
 static int surface(yafaray_Scene *scene, yafaray_ParamMap *p,
                     yafaray_ParamMapList *nodes, const char *name,
-                    const char *filter, double z, double period,
+                    const char *filter, double anisotropy, double z, double period,
                     double r, double g, double b, int ceiling)
 {
     size_t image, material, object, uv[4];
@@ -83,6 +85,7 @@ static int surface(yafaray_Scene *scene, yafaray_ParamMap *p,
     yafaray_setParamMapString(p, "type", "image");
     yafaray_setParamMapString(p, "image_name", name);
     yafaray_setParamMapString(p, "interpolate", filter);
+    yafaray_setParamMapFloat(p, "ewa_max_anisotropy", anisotropy);
     if(!ok(yafaray_createTexture(scene, name, p)) || mipmap_unavailable)
     {
         fputs("Texture creation failed; mipmap filters require an OpenCV-enabled libYafaRay.\n", stderr);
@@ -129,6 +132,7 @@ int main(int argc, char **argv)
 {
     const char *output = "horizon.tga", *filter = "bilinear";
     int aa = 16, threads = -1, i, output_set = 0, status = EXIT_FAILURE;
+    double anisotropy = 8.0;
     yafaray_Logger *logger = NULL;
     yafaray_ParamMap *p = NULL;
     yafaray_ParamMapList *nodes = NULL;
@@ -144,10 +148,19 @@ int main(int argc, char **argv)
     {
         const char *arg = argv[i];
         if(strcmp(arg, "--help") == 0) { usage(); return EXIT_SUCCESS; }
-        if(strcmp(arg, "--filter") == 0 || strcmp(arg, "--aa-samples") == 0 || strcmp(arg, "--threads") == 0)
+        if(strcmp(arg, "--filter") == 0 || strcmp(arg, "--aa-samples") == 0 ||
+           strcmp(arg, "--threads") == 0 || strcmp(arg, "--ewa-max-anisotropy") == 0)
         {
             if(++i == argc) { fprintf(stderr, "Missing value: %s\n", arg); return EXIT_FAILURE; }
             if(strcmp(arg, "--filter") == 0) filter = argv[i];
+            else if(strcmp(arg, "--ewa-max-anisotropy") == 0)
+            {
+                char *end;
+                errno = 0;
+                anisotropy = strtod(argv[i], &end);
+                if(errno || end == argv[i] || *end || !(anisotropy >= 1.0 && anisotropy <= FLT_MAX))
+                { fputs("EWA anisotropy must be a finite number >= 1 fitting in a float.\n", stderr); return EXIT_FAILURE; }
+            }
             else if(!integer(argv[i], strcmp(arg, "--threads") == 0,
                     strcmp(arg, "--threads") == 0 ? &threads : &aa))
             { fputs("Invalid positive integer (threads also accepts -1).\n", stderr); return EXIT_FAILURE; }
@@ -162,7 +175,7 @@ int main(int argc, char **argv)
     if(strlen(output) < 4 || strcmp(output + strlen(output) - 4, ".tga"))
     { fputs("Output must end in .tga.\n", stderr); return EXIT_FAILURE; }
     if(yafaray_getVersionMajor() != YAFARAY_C_API_VERSION_MAJOR) return EXIT_FAILURE;
-    printf("Filter=%s AA_minsamples=%d threads=%d; floor period=2, ceiling period=3.4\n", filter, aa, threads);
+    printf("Filter=%s AA_minsamples=%d threads=%d ewa_max_anisotropy=%g; floor period=2, ceiling period=3.4\n", filter, aa, threads, anisotropy);
     logger = yafaray_createLogger("texture_horizon", log_callback, NULL, YAFARAY_DISPLAY_CONSOLE_NORMAL);
     if(!logger) goto cleanup;
     yafaray_setConsoleVerbosityLevel(logger, YAFARAY_LOG_LEVEL_VERBOSE);
@@ -172,8 +185,8 @@ int main(int argc, char **argv)
     control = yafaray_createRenderControl();
     monitor = yafaray_createRenderMonitor(NULL, NULL, YAFARAY_DISPLAY_CONSOLE_HIDDEN);
     if(!p || !nodes || !scene || !control || !monitor) goto cleanup;
-    if(!surface(scene, p, nodes, "floor", filter, 0, 2.0, 1, 0.75, 0.35, 0) ||
-       !surface(scene, p, nodes, "ceiling", filter, 3, 3.4, 0.45, 0.75, 1, 1)) goto cleanup;
+    if(!surface(scene, p, nodes, "floor", filter, anisotropy, 0, 2.0, 1, 0.75, 0.35, 0) ||
+       !surface(scene, p, nodes, "ceiling", filter, anisotropy, 3, 3.4, 0.45, 0.75, 1, 1)) goto cleanup;
 
     yafaray_clearParamMap(p);
     yafaray_setParamMapString(p, "type", "constant");

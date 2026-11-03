@@ -49,6 +49,7 @@ Options follow the target name, accept separate values, and need no rebuild:
 | `--filter bicubic` | — | Cubic interpolation of neighboring texels |
 | `--filter mipmap_trilinear` | — | Trilinear mipmap filtering; requires OpenCV-enabled DLL |
 | `--filter mipmap_ewa` | — | Elliptical weighted average mipmap filtering; requires OpenCV-enabled DLL |
+| `--ewa-max-anisotropy N` | `8` | Finite number >= 1 fitting in a float; EWA footprint aspect-ratio limit |
 | `--aa-samples N` | `16` | Positive integer; film `AA_minsamples`, one AA pass |
 | `--threads N` | `-1` | Positive worker count, or `-1` for auto |
 | `--help` | — | Usage without rendering |
@@ -151,6 +152,68 @@ textures; UV coordinates let the mapper compute their pixel footprints.
 Trilinear chooses/blends isotropic mip levels, often blurring grazing-angle
 detail. EWA adapts to an elongated footprint, aiming to preserve more detail
 while suppressing aliasing. Neither changes the geometry or either texture period.
+
+### Compare EWA anisotropy limits
+
+`--ewa-max-anisotropy` sets the image texture parameter `ewa_max_anisotropy`
+for both the floor and ceiling, without recompiling. It only affects
+`--filter mipmap_ewa`; other filters ignore it. Fractional values such as `4.5`
+are supported. Zero, negative values, NaN, infinity and values outside the float
+range are rejected before rendering. The default of 8 preserves prior behavior.
+
+After selecting the OpenCV-enabled installation and building the example, run
+from `examples/texture_horizon`:
+
+```powershell
+xmake run yafaray_texture_horizon ewa16.tga --filter mipmap_ewa --ewa-max-anisotropy 16 --aa-samples 16 --threads -1
+
+# Run all four limits at the same AA and thread settings
+.\compare_filters.ps1 -AnisotropyComparison -AaSamples 16 -Threads -1
+```
+
+The batch creates `ewa-1`, `ewa-4`, `ewa-8` and `ewa-16` TGA/PNG files, logs,
+`timings.csv` and labeled comparison PNGs in a timestamped
+`build/anisotropy-comparison` directory. The full comparison is 3200 x 590;
+the horizon comparison is 1600 x 330, showing the same central 200 x 120 crop
+from each image at 2x enlargement with no smoothing. In both, the order is
+**1 — 4 — 8 — 16**, left to right. Existing three-filter comparison commands
+continue to work without `-AnisotropyComparison`.
+
+To regenerate images from a completed anisotropy run without rendering again:
+
+```powershell
+.\compare_filters.ps1 -AnisotropyComparison -ExistingRunDirectory build/anisotropy-comparison/20261103-220049-837
+```
+
+Measured on 3 November 2026 using the fixed OpenCV-enabled shared library,
+800 x 500, AA=16 and 8 automatically detected workers, with identical geometry,
+UVs, periods and materials in every render:
+
+| `ewa_max_anisotropy` | Renderer-only time | Launch + render + TGA save | Observed result |
+| --- | --- | --- | --- |
+| 1 | 4.987 s | 6.129 s | Broad isotropic blur; distant cell rows disappear early |
+| 4 | 6.089 s | 7.164 s | Much better distant detail with modest additional cost |
+| 8 | 7.498 s | 8.533 s | More detail survives near the horizon; useful balance |
+| 16 | 12.417 s | 13.395 s | Sharpest distant pattern in this set, with higher cost |
+
+![EWA anisotropy 1, 4, 8 and 16: complete images](images/anisotropy-comparison.png)
+
+![EWA anisotropy 1, 4, 8 and 16: horizon detail at 2x](images/anisotropy-comparison-horizon.png)
+
+The limit caps how elongated the EWA footprint may be. At 1, the short axis is
+expanded to the long-axis length, making the footprint isotropic. Higher limits
+allow more anisotropy, reducing unnecessary blur perpendicular to the direction
+of greatest compression. This is not a count of samples or mipmap levels, and
+does not change texture frequency or AA. All four images still converge to an
+average at sufficiently small projected periods.
+
+**Use 8 as the general starting point for this scene.** Limit 4 is a faster
+preview with a clear improvement over 1. Limit 16 is worthwhile when preserving
+distant cells matters: it costs about 1.66x the renderer time of 8 here, with a
+visible but smaller quality gain than the step from 1 to 4. Larger limits can
+retain more residual aliasing at finite AA, so sharper does not automatically
+mean a more accurate result. These are single-run measurements, not universal
+timing guarantees. No colored artifacts were found in any of the four outputs.
 
 ### Measured comparison with OpenCV
 

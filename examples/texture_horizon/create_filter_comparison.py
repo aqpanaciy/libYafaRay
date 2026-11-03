@@ -1,4 +1,4 @@
-"""Convert the three TGA filters to faithful full-view and 2x horizon PNG strips."""
+"""Convert TGA profiles to faithful full-view and 2x horizon PNG strips."""
 import argparse
 from pathlib import Path
 import struct
@@ -37,16 +37,18 @@ def png(path, rows):
                      + chunk(b"IDAT", zlib.compress(b"".join(b"\0"+r for r in rows))) + chunk(b"IEND", b""))
 
 
-def compare(folder):
-    images = [read_tga(folder / (name+".tga")) for name in FILTERS]
-    for name, rows in zip(FILTERS, images):
+def compare(folder, names=FILTERS):
+    images = [read_tga(folder / (name+".tga")) for name in names]
+    for name, rows in zip(names, images):
         png(folder / (name+".png"), rows)
     png(folder / "comparison.png", [b"".join(im[y] for im in images) for y in range(500)])
     crops = []
+    crop_width = 200 if len(names) > 3 else 400
+    crop_x = (800 - crop_width) // 2
     for image in images:
         rows = []
         for y in range(190, 310):
-            row = b"".join(image[y][3*x:3*x+3]*2 for x in range(200, 600))
+            row = b"".join(image[y][3*x:3*x+3]*2 for x in range(crop_x, crop_x + crop_width))
             rows.extend([row]*2)
         crops.append(rows)
     png(folder / "comparison-horizon.png", [b"".join(im[y] for im in crops) for y in range(240)])
@@ -55,8 +57,9 @@ def compare(folder):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
+    parser.add_argument("--names", nargs="+", default=FILTERS, help="Input TGA stems in display order")
     args = parser.parse_args()
     try:
-        compare(args.directory)
+        compare(args.directory, args.names)
     except (OSError, ValueError) as error:
         parser.exit(1, str(error) + "\n")
