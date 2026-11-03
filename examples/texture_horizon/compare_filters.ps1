@@ -3,9 +3,14 @@ param(
     [ValidateRange(1, 2147483647)][int]$AaSamples = 16,
     [ValidateScript({ $_ -eq -1 -or $_ -gt 0 })][int]$Threads = -1,
     [switch]$AnisotropyComparison,
+    [ValidateRange(1, 2147483647)][int[]]$AnisotropyLimits = @(1,4,8,16),
     [string]$ExistingRunDirectory
 )
 $ErrorActionPreference = 'Stop'
+if ($AnisotropyComparison -and ($AnisotropyLimits.Count -eq 0 -or
+    @($AnisotropyLimits | Select-Object -Unique).Count -ne $AnisotropyLimits.Count)) {
+    throw 'AnisotropyLimits must contain distinct positive integers.'
+}
 if (-not $ExistingRunDirectory) {
     $xmakeExe = @(Get-Command xmake -CommandType Application -ErrorAction Stop)[0].Source
 }
@@ -17,7 +22,7 @@ $run = if ($ExistingRunDirectory) {
     Join-Path $PSScriptRoot ("build/$group/" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 }
 $profiles = if ($AnisotropyComparison) {
-    foreach ($limit in @(1,4,8,16)) {
+    foreach ($limit in $AnisotropyLimits) {
         [pscustomobject]@{ Name = "ewa-$limit"; Filter = 'mipmap_ewa'; Anisotropy = $limit }
     }
 } else {
@@ -66,6 +71,7 @@ try {
         $results | Export-Csv -LiteralPath (Join-Path $run 'timings.csv') -NoTypeInformation -Encoding UTF8
     } }
     $imageArguments = @((Join-Path $PSScriptRoot 'create_filter_comparison.py'), $run, '--names') + @($profiles.Name)
+    if ($AnisotropyComparison) { $imageArguments += @('--crop-width', '200') }
     & $pythonExe @imageArguments
     if ($LASTEXITCODE) { throw 'Image comparison conversion failed.' }
     Add-Type -AssemblyName System.Drawing

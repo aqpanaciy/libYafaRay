@@ -169,6 +169,9 @@ xmake run yafaray_texture_horizon ewa16.tga --filter mipmap_ewa --ewa-max-anisot
 
 # Run all four limits at the same AA and thread settings
 .\compare_filters.ps1 -AnisotropyComparison -AaSamples 16 -Threads -1
+
+# Choose a different set of limits, preserving the supplied order
+.\compare_filters.ps1 -AnisotropyComparison -AnisotropyLimits 16,32,64 -AaSamples 16 -Threads -1
 ```
 
 The batch creates `ewa-1`, `ewa-4`, `ewa-8` and `ewa-16` TGA/PNG files, logs,
@@ -178,6 +181,11 @@ the horizon comparison is 1600 x 330, showing the same central 200 x 120 crop
 from each image at 2x enlargement with no smoothing. In both, the order is
 **1 — 4 — 8 — 16**, left to right. Existing three-filter comparison commands
 continue to work without `-AnisotropyComparison`.
+`-AnisotropyLimits` accepts distinct positive integers and defaults to
+`1,4,8,16`. With a custom list, filenames and headings follow those values;
+each full-view column is 800 pixels wide and each 2x horizon column is 400
+pixels wide. Pass the same list when regenerating that run's images with
+`-ExistingRunDirectory`.
 
 To regenerate images from a completed anisotropy run without rendering again:
 
@@ -214,6 +222,55 @@ visible but smaller quality gain than the step from 1 to 4. Larger limits can
 retain more residual aliasing at finite AA, so sharper does not automatically
 mean a more accurate result. These are single-run measurements, not universal
 timing guarantees. No colored artifacts were found in any of the four outputs.
+
+#### Does increasing anisotropy beyond 16 help at AA=16?
+
+The follow-up run compares **16 — 32 — 64**, left to right, with the same
+OpenCV-enabled fixed DLL, 800 x 500 scene, AA=16 and 8 detected workers.
+All three values, including 16, were rendered again on 3 November 2026;
+the timings below belong to this run rather than the earlier four-value test.
+Run directory: `build/anisotropy-comparison/20261103-220610-715`.
+
+```powershell
+.\compare_filters.ps1 -AnisotropyComparison -AnisotropyLimits 16,32,64 -AaSamples 16 -Threads -1
+```
+
+| `ewa_max_anisotropy` | Renderer-only time | Launch + render + TGA save | Relative renderer time |
+| --- | --- | --- | --- |
+| 16 | 12.020 s | 13.053 s | 1.00x |
+| 32 | 21.465 s | 22.563 s | 1.79x |
+| 64 | 33.937 s | 34.966 s | 2.82x |
+
+![EWA anisotropy 16, 32 and 64: complete images](images/anisotropy-high-comparison.png)
+
+Identical central horizon crops at 2x enlargement, without smoothing:
+
+![EWA anisotropy 16, 32 and 64: horizon detail at 2x](images/anisotropy-high-horizon.png)
+
+The visible gain above 16 is small in this view. Some individual distant edges
+change between 16 and 32; 32 and 64 are almost indistinguishable even in the
+enlarged crop. The nearby floor/ceiling remain effectively the same. All three
+outputs passed the scene-specific color check without invalid pixels.
+
+For a numerical comparison of the displayed crop (original coordinates
+`x = 300..499`, `y = 190..309`, 24,000 pixels), using the saved 8-bit RGB values:
+
+| Pair | Mean absolute channel difference, on a 0..255 scale | Pixels with any channel differing by more than 2 |
+| --- | --- | --- |
+| 16 vs 32 | 0.152 | 457 / 24,000 (1.90%) |
+| 32 vs 64 | 0.0255 | 15 / 24,000 (0.063%) |
+
+These numbers measure similarity between the outputs, not error against a
+ground-truth reference. They support the visual observation that the extra
+cost buys very little visible change in this particular scene at AA=16.
+
+**Keep 16 when this level of distant detail is needed; increasing to 32 or 64
+is not justified for routine renders of this view.** The earlier recommendation
+of 8 as a faster starting point still applies. Anisotropy is a maximum allowed
+footprint ratio, not a fixed sample count; raising it does not guarantee a
+visible change or a more accurate result. Other textures, camera angles,
+resolutions or AA settings may produce a different tradeoff. All times are
+single-run local measurements.
 
 ### Measured comparison with OpenCV
 

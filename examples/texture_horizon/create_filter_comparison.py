@@ -37,13 +37,14 @@ def png(path, rows):
                      + chunk(b"IDAT", zlib.compress(b"".join(b"\0"+r for r in rows))) + chunk(b"IEND", b""))
 
 
-def compare(folder, names=FILTERS):
+def compare(folder, names=FILTERS, crop_width=None):
     images = [read_tga(folder / (name+".tga")) for name in names]
     for name, rows in zip(names, images):
         png(folder / (name+".png"), rows)
     png(folder / "comparison.png", [b"".join(im[y] for im in images) for y in range(500)])
     crops = []
-    crop_width = 200 if len(names) > 3 else 400
+    if crop_width is None:
+        crop_width = 200 if len(names) > 3 else 400
     crop_x = (800 - crop_width) // 2
     for image in images:
         rows = []
@@ -58,8 +59,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--names", nargs="+", default=FILTERS, help="Input TGA stems in display order")
+    parser.add_argument("--crop-width", type=int, choices=(200, 400), help="Width of the central horizon crop before 2x enlargement")
     args = parser.parse_args()
     try:
-        compare(args.directory, args.names)
+        compare(args.directory, args.names, args.crop_width)
     except (OSError, ValueError) as error:
         parser.exit(1, str(error) + "\n")
