@@ -90,6 +90,11 @@ xmake f -p mingw -a x86_64 -m release --sdk=C:/temp/TDM-GCC-64 --yafaray_prefix=
 
 ## Run all quality profiles
 
+Requirements for the comparison script: Python 3.8 or newer available as
+`python`, in addition to PowerShell and the configured xmake example. PNG
+generation uses the Python standard library; Pillow and external converters
+are not needed. Python is checked before rendering starts.
+
 After configuring and building the example once, run from the repository root:
 
 ```powershell
@@ -120,10 +125,35 @@ elapsed seconds and paths. Relative `-OutputDirectory` paths are relative to the
 directory from which the script is called. The script prints per-profile and
 total time, stops on failure, and preserves already completed measurements.
 
+After all three renders succeed, the script automatically creates:
+
+- `comparison.png`: the three complete images side by side, 1440 x 360 pixels.
+- `comparison-detail.png`: identical 160 x 120 crops of the dark face and shadow,
+  enlarged 3x without smoothing, also 1440 x 360 pixels.
+
+Both use the order **preview — baseline — quality**, from left to right. RGB
+values are copied from the TGA files without color correction or denoising.
+The source TGA files are preserved. The crop is fixed for this example's
+480 x 360 camera view; adjust `create_comparison.py` if the framing changes.
+Malformed, missing or unsupported TGA files cause a clear error.
+
+To generate or regenerate the PNGs for an existing run without rendering:
+
+```powershell
+# From the repository root; replace the directory with your own run
+.\examples\render_scene\compare_quality.ps1 -ExistingRunDirectory '.\examples\render_scene\build\quality-comparison\20261103-195010-004'
+```
+
+This mode only needs Python and the three TGA files with the profile filenames
+shown above; it does not launch xmake or use `-Threads`/`-OutputDirectory`.
+Existing comparison PNGs in that run directory are overwritten.
+
 The script measures elapsed wall time including the xmake launch, rendering,
 TGA writing and log capture. The renderer-only time is also available in each
 log as `Overall rendertime`. The profiles change several sample counts together
 to compare overall presets; use individual CLI options to isolate one setting.
+The total script time also includes PNG generation, while per-profile CSV times
+continue to measure only their individual render invocations.
 
 Measured on this machine on 3 November 2026, with the installed TDM-GCC-64
 Release shared library, 480 x 360 output and `-Threads -1` (8 detected workers):
@@ -140,6 +170,8 @@ This is a single measured run, not a guarantee; worker count, CPU load, hardware
 and build configuration affect time. Increasing several sample counts together
 does not produce a simple linear runtime increase. Build/configuration time is
 not included because the script uses the already-built example.
+These measurements predate automatic PNG generation; generating both PNGs from
+the existing images adds a small conversion overhead to future full runs.
 
 ### Visual comparison: preview, baseline and quality
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Render three quality profiles sequentially and record elapsed wall time.
+Render three quality profiles, record wall time and create comparison PNGs.
 .EXAMPLE
 .\compare_quality.ps1 -Threads 2
 #>
@@ -9,10 +9,28 @@ param(
     [ValidateScript({ $_ -eq -1 -or $_ -gt 0 })]
     [int]$Threads = -1,
 
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'build/quality-comparison')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'build/quality-comparison'),
+
+    [string]$ExistingRunDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+# Check the image-conversion dependency before starting expensive renders.
+$pythonCommand = @(Get-Command python -CommandType Application -ErrorAction Stop)[0].Source
+& $pythonCommand -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'
+if ($LASTEXITCODE -ne 0) { throw 'Python 3.8 or newer is required to create comparison PNGs.' }
+
+function New-ComparisonImages([string]$Directory) {
+    & $pythonCommand (Join-Path $PSScriptRoot 'create_comparison.py') $Directory
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create comparison PNGs in $Directory" }
+}
+
+if ($ExistingRunDirectory) {
+    $existingPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ExistingRunDirectory)
+    New-ComparisonImages $existingPath
+    return
+}
+
 $xmakeCommand = @(Get-Command xmake -CommandType Application -ErrorAction Stop)[0].Source
 $profiles = @(
     [pscustomobject]@{ Name = 'preview'; AaSamples = 4; PathSamples = 2; LightSamples = 2 },
@@ -67,6 +85,7 @@ try {
         $results | Export-Csv -LiteralPath (Join-Path $runDirectory 'timings.csv') -NoTypeInformation -Encoding UTF8
         Write-Host ("Completed {0}: {1:N2} seconds" -f $profile.Name, $watch.Elapsed.TotalSeconds)
     }
+    New-ComparisonImages $runDirectory
 }
 finally {
     $totalWatch.Stop()
@@ -75,4 +94,4 @@ finally {
 }
 
 $results | Format-Table Profile, AaSamples, PathSamples, LightSamples, RequestedThreads, ElapsedSeconds -AutoSize
-Write-Host "Images, logs and timings.csv: $runDirectory"
+Write-Host "TGA images, comparison PNGs, logs and timings.csv: $runDirectory"
