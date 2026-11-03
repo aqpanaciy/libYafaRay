@@ -5,3 +5,4 @@ make*
 !/.gitignore
 !/.gitattributes
 !/cmake
+!/CMakePresets.json

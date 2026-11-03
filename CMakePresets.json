@@ -1,0 +1,33 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "tdm-gcc64-shared",
+      "displayName": "TDM-GCC-64 shared library (Release)",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/tdm-gcc64-shared",
+      "environment": {
+        "PATH": "C:/temp/TDM-GCC-64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "C:/temp/TDM-GCC-64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/temp/TDM-GCC-64/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/temp/TDM-GCC-64/bin/mingw32-make.exe",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/tdm-gcc64-shared",
+        "BUILD_SHARED_LIBS": "ON",
+        "YAFARAY_BUILD_TESTS": "OFF",
+        "YAFARAY_WITH_FREETYPE": "OFF",
+        "YAFARAY_WITH_JPEG": "OFF",
+        "YAFARAY_WITH_OPENCV": "OFF",
+        "YAFARAY_WITH_OPENEXR": "OFF",
+        "YAFARAY_WITH_PNG": "OFF",
+        "YAFARAY_WITH_TIFF": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "tdm-gcc64-shared", "configurePreset": "tdm-gcc64-shared" }
+  ]
+}
