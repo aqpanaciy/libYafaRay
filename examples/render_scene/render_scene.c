@@ -4,10 +4,92 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <limits.h>
 #include <yafaray_c_api.h>
 
 #define WIDTH 480
 #define HEIGHT 360
+
+typedef struct RenderOptions
+{
+    const char *output;
+    int aa_samples;
+    int path_samples;
+    int light_samples;
+    int threads;
+} RenderOptions;
+
+static void usage(const char *program)
+{
+    printf("Usage: %s [output.tga] [options]\n"
+           "  --aa-samples N     Film AA_minsamples (default: 32)\n"
+           "  --path-samples N   Integrator path_samples (default: 8)\n"
+           "  --light-samples N  Area light samples (default: 8)\n"
+           "  --threads N        Render workers (default: 2; -1 = auto)\n"
+           "  --help             Show this help without rendering\n"
+           "Sample counts must be integers from 1 to INT_MAX.\n"
+           "Options accept --name N or --name=N; output may precede or follow them.\n",
+           program);
+}
+
+/* Parse before opening output files or creating library objects. */
+static int parse_options(int argc, char **argv, RenderOptions *options)
+{
+    int i, output_set = 0, positional_only = 0;
+    for(i = 1; i < argc; ++i)
+    {
+        const char *arg = argv[i];
+        if(!positional_only && strcmp(arg, "--help") == 0)
+        { usage(argv[0]); return 0; }
+        if(!positional_only && strcmp(arg, "--") == 0)
+        { positional_only = 1; continue; }
+        if(!positional_only && arg[0] == '-')
+        {
+            const char *equals = strchr(arg, '=');
+            size_t length = equals ? (size_t)(equals - arg) : strlen(arg);
+            const char *value;
+            const char *digit;
+            char *end;
+            long number;
+            int *destination = NULL;
+            if(length == strlen("--aa-samples") && strncmp(arg, "--aa-samples", length) == 0)
+                destination = &options->aa_samples;
+            else if(length == strlen("--path-samples") && strncmp(arg, "--path-samples", length) == 0)
+                destination = &options->path_samples;
+            else if(length == strlen("--light-samples") && strncmp(arg, "--light-samples", length) == 0)
+                destination = &options->light_samples;
+            else if(length == strlen("--threads") && strncmp(arg, "--threads", length) == 0)
+                destination = &options->threads;
+            if(!destination)
+            { fprintf(stderr, "Unknown option: %s\n", arg); return -1; }
+            if(!equals && i + 1 >= argc)
+            { fprintf(stderr, "Missing value for %s\n", arg); return -1; }
+            value = equals ? equals + 1 : argv[++i];
+            digit = value;
+            if(destination == &options->threads && strcmp(value, "-1") == 0) ++digit;
+            if(!*digit)
+            { fprintf(stderr, "Invalid integer for %s: %s\n", arg, value); return -1; }
+            for(; *digit; ++digit)
+                if(*digit < '0' || *digit > '9')
+                { fprintf(stderr, "Invalid integer for %s: %s\n", arg, value); return -1; }
+            errno = 0;
+            number = strtol(value, &end, 10);
+            if(errno == ERANGE || *end || number > INT_MAX ||
+               (number < 1 && !(destination == &options->threads && number == -1)))
+            { fprintf(stderr, "Out-of-range value for %s: %s\n", arg, value); return -1; }
+            *destination = (int)number;
+        }
+        else
+        {
+            if(output_set)
+            { fprintf(stderr, "Unexpected argument: %s\n", arg); return -1; }
+            options->output = arg;
+            output_set = 1;
+        }
+    }
+    return 1;
+}
 
 /* Result flags can contain warnings as well as errors. */
 static int succeeded(yafaray_ResultFlags result)
@@ -66,7 +148,8 @@ int main(int argc, char **argv)
         {-4.5, -5.5, 7}, {-4.5, -2.5, 7},
         {-1.5, -2.5, 7}, {-1.5, -5.5, 7}
     };
-    const char *output = argc > 1 ? argv[1] : "scene.tga";
+    RenderOptions options = {"scene.tga", 32, 8, 8, 2};
+    const char *output;
     yafaray_Logger *logger = NULL;
     yafaray_ParamMap *params = NULL;
     yafaray_ParamMapList *nodes = NULL;
@@ -80,13 +163,16 @@ int main(int argc, char **argv)
     FILE *file;
     long image_size;
     unsigned char header[18];
-    size_t output_length = strlen(output);
+    size_t output_length;
+    int parse_result = parse_options(argc, argv, &options);
 
-    if(argc > 2)
+    if(parse_result <= 0)
     {
-        fprintf(stderr, "Usage: %s [output.tga]\n", argv[0]);
-        return EXIT_FAILURE;
+        if(parse_result < 0) fputs("Use --help for usage.\n", stderr);
+        return parse_result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
     }
+    output = options.output;
+    output_length = strlen(output);
     if(output_length < 4 ||
        (strcmp(output + output_length - 4, ".tga") != 0 &&
         strcmp(output + output_length - 4, ".TGA") != 0))
@@ -99,6 +185,8 @@ int main(int argc, char **argv)
         fputs("Incompatible libYafaRay API version.\n", stderr);
         return EXIT_FAILURE;
     }
+    printf("Render settings: AA_minsamples=%d path_samples=%d samples=%d threads=%d\n",
+           options.aa_samples, options.path_samples, options.light_samples, options.threads);
 
     logger = yafaray_createLogger("render_scene", NULL, NULL, YAFARAY_DISPLAY_CONSOLE_NORMAL);
     if(!logger) goto cleanup;
@@ -125,7 +213,7 @@ int main(int argc, char **argv)
     yafaray_setParamMapVector(params, "point2", -1.5, -5.5, 7.0);
     yafaray_setParamMapColor(params, "color", 1.0, 0.95, 0.85, 1.0);
     yafaray_setParamMapFloat(params, "power", 12.0);
-    yafaray_setParamMapInt(params, "samples", 8);
+    yafaray_setParamMapInt(params, "samples", options.light_samples);
     yafaray_setParamMapString(params, "object_name", "emitter");
     if(!succeeded(yafaray_createLight(scene, "key", params))) goto cleanup;
 
@@ -137,10 +225,10 @@ int main(int argc, char **argv)
     /* Diffuse paths carry light reflected by the floor onto the cube. */
     yafaray_clearParamMap(params);
     yafaray_setParamMapString(params, "type", "pathtracing");
-    yafaray_setParamMapInt(params, "path_samples", 8);
+    yafaray_setParamMapInt(params, "path_samples", options.path_samples);
     yafaray_setParamMapInt(params, "bounces", 3);
     yafaray_setParamMapInt(params, "russian_roulette_min_bounces", 3);
-    yafaray_setParamMapInt(params, "threads", 2);
+    yafaray_setParamMapInt(params, "threads", options.threads);
     integrator = yafaray_createSurfaceIntegrator(logger, "path", params);
     if(!integrator) goto cleanup;
 
@@ -148,7 +236,7 @@ int main(int argc, char **argv)
     yafaray_setParamMapInt(params, "width", WIDTH);
     yafaray_setParamMapInt(params, "height", HEIGHT);
     yafaray_setParamMapInt(params, "AA_passes", 1);
-    yafaray_setParamMapInt(params, "AA_minsamples", 32);
+    yafaray_setParamMapInt(params, "AA_minsamples", options.aa_samples);
     film = yafaray_createFilm(logger, integrator, "film", params);
     if(!film) goto cleanup;
 

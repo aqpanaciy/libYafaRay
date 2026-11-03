@@ -2,8 +2,9 @@
 
 This standalone C90 example uses the installed libYafaRay shared library. It
 creates a red cube, a gray floor, a rectangular area light, a perspective camera
-and a path tracing integrator. The renderer writes a 480 x 360 TGA image with 32 samples per
-pixel. No textures, scene files or optional image libraries are required.
+and a path tracing integrator. The renderer writes a 480 x 360 TGA image with 32
+camera samples per pixel by default. No textures, scene files or optional image
+libraries are required.
 
 The library continues to use CMake. If it is not installed yet, follow the
 [TDM-GCC-64 library build instructions](../hello/README.md#windows-tdm-gcc-64)
@@ -35,11 +36,110 @@ The filename must end with `.tga` or `.TGA`. A relative output path is resolved
 against the run directory. The example checks API compatibility, scene setup,
 preprocessing, and the saved TGA header and size; failures return a nonzero code.
 
+## Compare quality and rendering time without rebuilding
+
+After building once, pass these options to `xmake run yafaray_render_scene`:
+
+| Option | libYafaRay parameter | Default | Allowed values |
+| --- | --- | --- | --- |
+| `--aa-samples N` | Film `AA_minsamples` | `32` | Positive integer |
+| `--path-samples N` | Integrator `path_samples` | `8` | Positive integer |
+| `--light-samples N` | Area light `samples` | `8` | Positive integer |
+| `--threads N` | Integrator `threads` | `2` | Positive integer, or `-1` for automatic detection |
+
+Integers must fit in a C `int` (up to 2147483647 for this toolchain). Very large
+values can be impractical. Zero, fractions, missing values and unknown options
+are rejected before an output file is opened. `--name=N` is also supported.
+Repeated options use the last value. `--help` shows usage without rendering.
+The output filename is optional and can appear before or after the options;
+omitting it uses `scene.tga`. Existing invocations with just a filename still work.
+
+Run these commands from `examples/render_scene`:
+
+```powershell
+# Fast, noisy preview
+xmake run yafaray_render_scene preview.tga --aa-samples 4 --path-samples 2 --light-samples 2 --threads 2
+
+# Previous quality settings, explicitly specified
+xmake run yafaray_render_scene baseline.tga --aa-samples 32 --path-samples 8 --light-samples 8 --threads 2
+
+# More samples for cleaner indirect light and shadows; takes longer
+xmake run yafaray_render_scene quality.tga --aa-samples 64 --path-samples 16 --light-samples 16 --threads 2
+
+# Let libYafaRay detect the worker count
+xmake run yafaray_render_scene auto.tga --threads=-1
+
+# Help only
+xmake run yafaray_render_scene --help
+```
+
+These files appear in `examples/render_scene/build`. At startup the example
+prints all four selected settings. libYafaRay reports its actual worker count
+and `Overall rendertime` in seconds at the end of the render. Compare those
+times with separate output images; the renderer time excludes example startup
+and the final TGA write. For a quality comparison keep the worker count fixed
+and change one sampling option at a time. To compare parallel performance,
+keep all sample counts fixed and vary only `--threads`. Timings can vary with
+other work on the machine, and Monte Carlo noise may vary between runs.
+
 For a different installed MinGW x64 shared library:
 
 ```powershell
 xmake f -p mingw -a x86_64 -m release --sdk=C:/temp/TDM-GCC-64 --yafaray_prefix=C:/path/to/install
 ```
+
+## Run all quality profiles
+
+After configuring and building the example once, run from the repository root:
+
+```powershell
+.\examples\render_scene\compare_quality.ps1
+```
+
+Or from `examples/render_scene`:
+
+```powershell
+.\compare_quality.ps1 -Threads 2
+.\compare_quality.ps1 -Threads -1 -OutputDirectory 'C:/renders/libYafaRay comparison'
+```
+
+The script runs three profiles sequentially through `xmake run`, without
+rebuilding. The default `-Threads -1` lets the library select the worker count;
+use the same explicit count for repeatable comparisons.
+
+| Profile | `AA_minsamples` | `path_samples` | Light `samples` | TGA filename |
+| --- | --- | --- | --- | --- |
+| preview | 4 | 2 | 2 | `preview-aa4-path2-light2.tga` |
+| baseline | 32 | 8 | 8 | `baseline-aa32-path8-light8.tga` |
+| quality | 64 | 16 | 16 | `quality-aa64-path16-light16.tga` |
+
+Every run gets a new timestamped subdirectory under
+`examples/render_scene/build/quality-comparison` (or `-OutputDirectory`). Each
+image has a matching `.log`; `timings.csv` records settings, requested threads,
+elapsed seconds and paths. Relative `-OutputDirectory` paths are relative to the
+directory from which the script is called. The script prints per-profile and
+total time, stops on failure, and preserves already completed measurements.
+
+The script measures elapsed wall time including the xmake launch, rendering,
+TGA writing and log capture. The renderer-only time is also available in each
+log as `Overall rendertime`. The profiles change several sample counts together
+to compare overall presets; use individual CLI options to isolate one setting.
+
+Measured on this machine on 3 November 2026, with the installed TDM-GCC-64
+Release shared library, 480 x 360 output and `-Threads -1` (8 detected workers):
+
+| Profile | Elapsed wall time | Renderer-only time |
+| --- | --- | --- |
+| preview | 1.83 s | 0.758 s |
+| baseline | 20.15 s | 19.071 s |
+| quality | 88.46 s | 87.432 s |
+| Entire script | 110.50 s (1 min 50.5 s) | — |
+
+Budget approximately 2 minutes for this complete set under similar conditions.
+This is a single measured run, not a guarantee; worker count, CPU load, hardware
+and build configuration affect time. Increasing several sample counts together
+does not produce a simple linear runtime increase. Build/configuration time is
+not included because the script uses the already-built example.
 
 Only installed headers and `lib/liblibyafaray4.dll.a` are used for compilation and
 linking. `xmake run` adds the installation's `bin` directory to the child process's
@@ -65,6 +165,8 @@ defined in the source for easy experimentation.
 All settings below are passed through `yafaray_setParamMap*` before creating the
 light, integrator or film. They are implemented by the installed shared library;
 no optional dependencies or library rebuild are needed.
+The sampling and worker values in the tables are defaults; the command-line
+options above override them at runtime.
 
 ### Area light: shadow softness
 
