@@ -158,15 +158,16 @@ All three modes were run with the **same OpenCV-enabled DLL**, 800 x 500 output,
 16 camera samples per pixel and 8 automatically detected render workers on
 3 November 2026. OpenCV 4.10.0 was built from source using TDM-GCC-64 10.3.0;
 libYafaRay identifies itself as `4.0.0-pre-alpha+git.g5448d81b.dirty`.
-The comparison run is `build/filter-comparison/20261103-205949-016`.
+The comparison run after the EWA bounds fixes below is
+`build/filter-comparison/20261103-211354-226`.
 Both mipmap modes logged 6 generated levels per texture and enabled ray
 differentials. No denoising, extra blur or color correction was applied.
 
 | Filter | Renderer-only time | Launch + render + TGA save | Observed result |
 | --- | --- | --- | --- |
-| `bilinear` | 2.558 s | 3.775 s | Sharp nearby cells, but grain/moire in the horizon band |
-| `mipmap_trilinear` | 3.756 s | 4.973 s | Horizon converges to a stable average; visible isotropic blur starts earlier |
-| `mipmap_ewa` | 7.828 s | 9.271 s | More detail before the horizon, but invalid bright colored bands at the extreme grazing angle |
+| `bilinear` | 2.661 s | 4.599 s | Sharp nearby cells, but grain/moire in the horizon band |
+| `mipmap_trilinear` | 3.241 s | 4.329 s | Horizon converges to a stable average; visible isotropic blur starts earlier |
+| `mipmap_ewa` | 7.780 s | 8.798 s | No colored bands; more distant detail survives before the pattern converges to its average |
 
 Left to right: **bilinear — mipmap_trilinear — mipmap_ewa**.
 Headings display elapsed time including launch and saving, rounded to two decimals.
@@ -177,20 +178,63 @@ The same horizon region at 2x enlargement without smoothing:
 
 ![Horizon detail: bilinear, Trilinear and EWA](images/filter-comparison-horizon.png)
 
-**For this scene and library revision, use Trilinear for correct horizon
-smoothing.** Its renderer time is about 1.5x Bilinear's, with a substantial
-reduction in aliasing at the cost of blur. Bilinear remains useful as the aliasing
-reference. EWA takes about 3.1x Bilinear's renderer time here, but its output
-cannot be considered a valid quality improvement because of the colored bands.
+**EWA now gives the best detail-preserving smoothing in this comparison.**
+It removes the colored bands after the bounds fixes, while retaining more
+visible distant cells than Trilinear. It takes about **2.9x Bilinear's**
+renderer time (2.4x Trilinear's). Trilinear is the faster, softer option, at about
+1.2x Bilinear's renderer time; Bilinear remains the aliasing reference.
+Some residual patterning can still occur during the transition at finite AA
+and the default EWA anisotropy limit of 8. The fix addresses invalid memory
+reads and spurious colors, not a guarantee of perfect filtering at every angle.
+Launch/save overhead and system scheduling explain why the wall-time ordering
+can differ from renderer-only time in this short, single-run measurement.
 
-The EWA artifact was reproduced in a second independent render with the same
-settings (`build/ewa-repeat.tga`); the bands persisted while their colors/pattern
-changed. These are not colors in either source texture and are not normal moire.
-This indicates an implementation defect in the tested EWA path, rather than a
-general limitation of the EWA filtering method. Source inspection found suspicious
-highest-mipmap indexing in `ImageTexture::ewaEllipticCalculation`, but the exact
-cause has not been confirmed by a targeted fix. The library's filtering source
-was not modified for this comparison. The PNGs deliberately retain the artifact.
+#### EWA bug and regression checks
+
+The original comparison (`build/filter-comparison/20261103-205949-016`) exposed
+bright colored bands. A color-range/hue regression check counted 16,450 invalid
+pixels in that EWA image, versus zero in Bilinear and Trilinear. The cause was
+out-of-bounds texel access, not normal moire or a property of EWA filtering.
+
+Runtime instrumentation caught texel `(11, 16)` being read from a 16 x 16 mipmap:
+the original Y coordinate was `-16`. `math::mod(-16, 16)` returned **16**, because
+the helper added the divisor for every negative input, including exact multiples
+whose remainder was already zero. The fix in `include/math/math.h` adds the
+divisor only when the **remainder** is negative, keeping wrapped indices in
+`[0, size)`.
+
+An additional bounds fix in `ImageTexture::ewaEllipticCalculation` samples
+`(0, 0)` directly at the coarsest 1 x 1 mipmap level; the old code incorrectly
+used the original image dimensions for that level's coordinate wrap. Correcting
+this second issue alone did not eliminate the colored bands; the modulo fix
+addresses the observed root cause. Temporary instrumentation was removed.
+
+The standalone C++17 regression test failed before the modulo correction and
+passes after it. It checks negative exact multiples, 1 x 1 textures, ordinary
+negative coordinates, and index bounds/congruence over positive and negative
+coordinates at all power-of-two sizes from 1 through 64. From the repository root:
+
+```powershell
+& C:/temp/TDM-GCC-64/bin/g++.exe -std=c++17 -I include tests/regression/math_mod.cc -o build/math_mod_test.exe
+& ./build/math_mod_test.exe
+```
+
+For a full comparison run, check the rendered pixels as well (substitute your
+run directory):
+
+```powershell
+python -B examples/texture_horizon/verify_filter_outputs.py examples/texture_horizon/build/filter-comparison/RUN_DIRECTORY
+```
+
+This scene-specific check validates texture hue ordering and maximum intensity
+outside a narrow floor/ceiling boundary band where AA mixes both palettes. It
+does not establish a general image-quality score and assumes this example's
+original self-emitting materials and colors.
+
+After rebuilding and installing `tdm-gcc64-shared-opencv`, the complete comparison
+was repeated with unchanged scene and sampling settings. The new check reports
+**zero invalid pixels for Bilinear, Trilinear and EWA**, and both comparison PNGs
+above were replaced with this verified run. No post-render repair was applied.
 
 The comparison images are kept in `images/` so cleaning `build/` does not remove
 the documented result. Timings are a single local measurement, not a guarantee.
