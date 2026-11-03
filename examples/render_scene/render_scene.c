@@ -62,6 +62,10 @@ int main(int argc, char **argv)
         {200, 200, -0.01}, {-200, 200, -0.01}
     };
     const size_t floor_faces[][3] = {{0, 1, 2}, {0, 2, 3}};
+    const double emitter_vertices[][3] = {
+        {-4.5, -5.5, 7}, {-4.5, -2.5, 7},
+        {-1.5, -2.5, 7}, {-1.5, -5.5, 7}
+    };
     const char *output = argc > 1 ? argv[1] : "scene.tga";
     yafaray_Logger *logger = NULL;
     yafaray_ParamMap *params = NULL;
@@ -110,13 +114,19 @@ int main(int argc, char **argv)
     if(!material(scene, params, nodes, "red", 0.75, 0.08, 0.035, &cube_material) ||
        !material(scene, params, nodes, "floor", 0.55, 0.60, 0.65, &floor_material)) goto cleanup;
     if(!mesh(scene, params, "cube", cube, 8, cube_faces, 12, cube_material) ||
-       !mesh(scene, params, "floor", floor_vertices, 4, floor_faces, 2, floor_material)) goto cleanup;
+       !mesh(scene, params, "floor", floor_vertices, 4, floor_faces, 2, floor_material) ||
+       !mesh(scene, params, "emitter", emitter_vertices, 4, floor_faces, 2, floor_material)) goto cleanup;
 
     yafaray_clearParamMap(params);
-    yafaray_setParamMapString(params, "type", "pointlight");
-    yafaray_setParamMapVector(params, "from", -3.0, -4.0, 7.0);
+    /* A 3 x 3 area emitter. Edge ordering points its emitting side downward. */
+    yafaray_setParamMapString(params, "type", "arealight");
+    yafaray_setParamMapVector(params, "corner", -4.5, -5.5, 7.0);
+    yafaray_setParamMapVector(params, "point1", -4.5, -2.5, 7.0);
+    yafaray_setParamMapVector(params, "point2", -1.5, -5.5, 7.0);
     yafaray_setParamMapColor(params, "color", 1.0, 0.95, 0.85, 1.0);
-    yafaray_setParamMapFloat(params, "power", 100.0);
+    yafaray_setParamMapFloat(params, "power", 12.0);
+    yafaray_setParamMapInt(params, "samples", 8);
+    yafaray_setParamMapString(params, "object_name", "emitter");
     if(!succeeded(yafaray_createLight(scene, "key", params))) goto cleanup;
 
     yafaray_clearParamMap(params);
@@ -124,18 +134,21 @@ int main(int argc, char **argv)
     yafaray_setParamMapColor(params, "color", 0.08, 0.10, 0.15, 1.0);
     if(!succeeded(yafaray_defineBackground(scene, params))) goto cleanup;
 
-    /* Direct lighting keeps this example fast and requires no optional libraries. */
+    /* Diffuse paths carry light reflected by the floor onto the cube. */
     yafaray_clearParamMap(params);
-    yafaray_setParamMapString(params, "type", "directlighting");
+    yafaray_setParamMapString(params, "type", "pathtracing");
+    yafaray_setParamMapInt(params, "path_samples", 8);
+    yafaray_setParamMapInt(params, "bounces", 3);
+    yafaray_setParamMapInt(params, "russian_roulette_min_bounces", 3);
     yafaray_setParamMapInt(params, "threads", 2);
-    integrator = yafaray_createSurfaceIntegrator(logger, "direct", params);
+    integrator = yafaray_createSurfaceIntegrator(logger, "path", params);
     if(!integrator) goto cleanup;
 
     yafaray_clearParamMap(params);
     yafaray_setParamMapInt(params, "width", WIDTH);
     yafaray_setParamMapInt(params, "height", HEIGHT);
     yafaray_setParamMapInt(params, "AA_passes", 1);
-    yafaray_setParamMapInt(params, "AA_minsamples", 16);
+    yafaray_setParamMapInt(params, "AA_minsamples", 32);
     film = yafaray_createFilm(logger, integrator, "film", params);
     if(!film) goto cleanup;
 
