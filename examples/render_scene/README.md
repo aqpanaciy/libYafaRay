@@ -91,9 +91,10 @@ xmake f -p mingw -a x86_64 -m release --sdk=C:/temp/TDM-GCC-64 --yafaray_prefix=
 ## Run all quality profiles
 
 Requirements for the comparison script: Python 3.8 or newer available as
-`python`, in addition to PowerShell and the configured xmake example. PNG
-generation uses the Python standard library; Pillow and external converters
-are not needed. Python is checked before rendering starts.
+`python`, in addition to Windows PowerShell/PowerShell on Windows and the
+configured xmake example. Image conversion uses the Python standard library;
+labels use Windows .NET System.Drawing and the Segoe UI font. Pillow and external
+converters are not needed. Python is checked before rendering starts.
 
 After configuring and building the example once, run from the repository root:
 
@@ -127,12 +128,18 @@ total time, stops on failure, and preserves already completed measurements.
 
 After all three renders succeed, the script automatically creates:
 
-- `comparison.png`: the three complete images side by side, 1440 x 360 pixels.
+- `comparison.png`: the three complete images side by side, with a heading
+  above each panel, 1440 x 492 pixels in total.
 - `comparison-detail.png`: identical 160 x 120 crops of the dark face and shadow,
-  enlarged 3x without smoothing, also 1440 x 360 pixels.
+  enlarged 3x without smoothing, with the same headings, also 1440 x 492 pixels.
 
 Both use the order **preview — baseline — quality**, from left to right. RGB
 values are copied from the TGA files without color correction or denoising.
+Each heading shows the profile name, `AA_minsamples`, `path_samples`, light
+`samples`, requested `threads` (`-1` means auto), and elapsed seconds from that
+run's `timings.csv`. `Elapsed` includes launch and saving the TGA, matching the
+CSV; it is not the renderer-only time. The detail image also labels the 3x zoom.
+Headings are added above the original pixels, without covering the scene.
 The source TGA files are preserved. The crop is fixed for this example's
 480 x 360 camera view; adjust `create_comparison.py` if the framing changes.
 Malformed, missing or unsupported TGA files cause a clear error.
@@ -144,8 +151,11 @@ To generate or regenerate the PNGs for an existing run without rendering:
 .\examples\render_scene\compare_quality.ps1 -ExistingRunDirectory '.\examples\render_scene\build\quality-comparison\20261103-195010-004'
 ```
 
-This mode only needs Python and the three TGA files with the profile filenames
-shown above; it does not launch xmake or use `-Threads`/`-OutputDirectory`.
+This mode needs Python, Windows System.Drawing, the three TGA files with the
+profile filenames shown above, and their `timings.csv`; it does not launch xmake
+or use `-Threads`/`-OutputDirectory`. Missing or invalid timing rows cause an
+error instead of guessed labels. Both decimal points and decimal commas in the
+CSV are supported.
 Existing comparison PNGs in that run directory are overwritten.
 
 The script measures elapsed wall time including the xmake launch, rendering,
@@ -177,7 +187,8 @@ the existing images adds a small conversion overhead to future full runs.
 
 Left to right: **preview — baseline — quality**, from the same measured run
 above. Each panel shows the original 480 x 360 render, converted losslessly
-from TGA to PNG for display in this README.
+from TGA to PNG, with the profile name, sampling settings, requested threads
+and elapsed time in a heading above it. Times include launch and TGA saving.
 
 ![Preview, baseline and quality side by side](images/quality-comparison.png)
 

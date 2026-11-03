@@ -21,8 +21,63 @@ $pythonCommand = @(Get-Command python -CommandType Application -ErrorAction Stop
 if ($LASTEXITCODE -ne 0) { throw 'Python 3.8 or newer is required to create comparison PNGs.' }
 
 function New-ComparisonImages([string]$Directory) {
+    # The CSV belongs to this run; never substitute hard-coded timings.
+    $timings = @(Import-Csv -LiteralPath (Join-Path $Directory 'timings.csv'))
+    $labels = foreach ($name in @('preview', 'baseline', 'quality')) {
+        $row = @($timings | Where-Object { $_.Profile -eq $name })
+        if ($row.Count -ne 1) { throw "Expected one timing row for '$name'." }
+        foreach ($field in @('AaSamples', 'PathSamples', 'LightSamples', 'RequestedThreads')) {
+            if ($row[0].$field -notmatch '^-?\d+$') { throw "Invalid $field for '$name'." }
+        }
+        $seconds = [double]::Parse($row[0].ElapsedSeconds.Replace(',', '.'), [Globalization.CultureInfo]::InvariantCulture)
+        if ([double]::IsNaN($seconds) -or [double]::IsInfinity($seconds) -or $seconds -lt 0) {
+            throw "Invalid elapsed time for '$name'."
+        }
+        [pscustomobject]@{
+            Name = $name
+            Samples = "AA_minsamples=$($row[0].AaSamples)  path_samples=$($row[0].PathSamples)"
+            Light = "samples=$($row[0].LightSamples)  threads=$($row[0].RequestedThreads)" + $(if ($row[0].RequestedThreads -eq '-1') { ' (auto)' } else { '' })
+            Time = 'Elapsed: ' + $seconds.ToString('F2', [Globalization.CultureInfo]::InvariantCulture) + ' s (incl. launch + save)'
+        }
+    }
+    Add-Type -AssemblyName System.Drawing
     & $pythonCommand (Join-Path $PSScriptRoot 'create_comparison.py') $Directory
     if ($LASTEXITCODE -ne 0) { throw "Failed to create comparison PNGs in $Directory" }
+
+    foreach ($filename in @('comparison.png', 'comparison-detail.png')) {
+        $path = Join-Path $Directory $filename
+        $source = $canvas = $graphics = $titleFont = $textFont = $brush = $mutedBrush = $null
+        try {
+            $source = [Drawing.Bitmap]::FromFile($path)
+            $headerHeight = 132
+            $canvas = [Drawing.Bitmap]::new($source.Width, $source.Height + $headerHeight)
+            $graphics = [Drawing.Graphics]::FromImage($canvas)
+            $graphics.Clear([Drawing.Color]::FromArgb(28, 33, 42))
+            $graphics.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+            $titleFont = [Drawing.Font]::new('Segoe UI', 21, [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
+            $textFont = [Drawing.Font]::new('Segoe UI', 15, [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Pixel)
+            $brush = [Drawing.SolidBrush]::new([Drawing.Color]::White)
+            $mutedBrush = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(205, 214, 227))
+            for ($i = 0; $i -lt $labels.Count; ++$i) {
+                $x = [single]($i * 480 + 16)
+                $title = $labels[$i].Name + $(if ($filename -eq 'comparison-detail.png') { ' - shadow detail 3x' } else { ' - 480 x 360' })
+                $graphics.DrawString($title, $titleFont, $brush, $x, [single]8)
+                $graphics.DrawString($labels[$i].Samples, $textFont, $mutedBrush, $x, [single]42)
+                $graphics.DrawString($labels[$i].Light, $textFont, $mutedBrush, $x, [single]68)
+                $graphics.DrawString($labels[$i].Time, $textFont, $brush, $x, [single]94)
+            }
+            # Copy image pixels at their original size; labels never cover them.
+            $graphics.DrawImageUnscaled($source, 0, $headerHeight)
+            $source.Dispose()
+            $source = $null
+            $canvas.Save($path, [Drawing.Imaging.ImageFormat]::Png)
+        }
+        finally {
+            foreach ($resource in @($graphics, $canvas, $source, $titleFont, $textFont, $brush, $mutedBrush)) {
+                if ($null -ne $resource) { $resource.Dispose() }
+            }
+        }
+    }
 }
 
 if ($ExistingRunDirectory) {
