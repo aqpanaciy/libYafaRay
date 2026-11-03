@@ -2,6 +2,8 @@ libYafaRay uses CMake for the building process in Linux, Windows and MacOSX syst
 
 For a TDM-GCC-64 shared-library preset and a separate xmake C API example,
 see [examples/hello/README.md](examples/hello/README.md).
+For a simple scene rendered to TGA with xmake, see
+[examples/render_scene/README.md](examples/render_scene/README.md).
 
 Dependencies:
   * Required
