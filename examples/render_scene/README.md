@@ -1,9 +1,10 @@
 # Render a simple scene to TGA
 
 This standalone C90 example uses the installed libYafaRay shared library. It
-creates a red cube, a gray floor, a rectangular area light, a perspective camera
+creates a red-and-cream checkerboard cube, a mirror sphere, a gray floor,
+a rectangular area light, a perspective camera
 and a path tracing integrator. The renderer writes a 480 x 360 TGA image with 32
-camera samples per pixel by default. No textures, scene files or optional image
+camera samples per pixel by default. No external textures, scene files or optional image
 libraries are required.
 
 The library continues to use CMake. If it is not installed yet, follow the
@@ -185,6 +186,10 @@ the existing images adds a small conversion overhead to future full runs.
 
 ### Visual comparison: preview, baseline and quality
 
+These reference images and timings show the earlier, untextured red cube without
+the sphere. New runs use the checkerboard texture and mirror sphere described
+below; their timings may differ.
+
 Left to right: **preview — baseline — quality**, from the same measured run
 above. Each panel shows the original 480 x 360 render, converted losslessly
 from TGA to PNG, with the profile name, sampling settings, requested threads
@@ -224,7 +229,9 @@ executable launches need this DLL directory and the toolchain runtimes in PATH.
 `render_scene.c` follows these steps:
 
 1. Create the logger, scene and parameter maps.
-2. Create two materials and triangle meshes for the cube, floor and emitter.
+2. Generate a checkerboard image in memory, create its texture and material,
+   and create triangle meshes for the cube, floor and emitter, plus an analytic
+   sphere with a mirror material.
 3. Add an area light linked to the emitter mesh and a constant background.
 4. Configure path tracing, the film, anti-aliasing and perspective camera.
 5. Attach a TGA output, preprocess the scene and render.
@@ -232,6 +239,43 @@ executable launches need this DLL directory and the toolchain runtimes in PATH.
 
 Material colors, light position/power and camera coordinates are deliberately
 defined in the source for easy experimentation.
+
+## Cube texture
+
+`checker_material()` generates a 64 x 64 RGB image directly in libYafaRay's
+memory, using `yafaray_createImage` and `yafaray_setImageColor`. Alternating
+8 x 8 pixel cells form a red-and-cream checkerboard (8 cells per image axis).
+The image uses `image_optimization = "none"` and linear RGB colors.
+
+An `image` texture references `checker_image` through `image_name`.
+`interpolate = "bilinear"` softens pixel transitions without needing OpenCV
+or mipmaps. A `texture_mapper` shader node uses `texco = "global"` and
+`mapping = "cube"` to project onto the cube's faces using their normals.
+It does not require UV coordinates. The material's `diffuse_shader` points
+to this mapper, so the texture participates in direct and indirect lighting.
+The floor keeps its uniform gray material.
+
+To experiment, edit the two RGB colors or the cell width (`x / 8`, `y / 8`)
+in `checker_material()`, then rebuild the example. Global coordinates anchor
+the pattern to the scene; moving the object changes which part it samples.
+The three quality profiles, CLI options and automatic comparison script also
+work with the textured cube.
+
+## Mirror sphere
+
+`mirror_sphere()` creates a `mirror` material with white `color` and
+`reflect = 0.95`, then assigns it by name through the sphere's `material`
+parameter. This is a sharp ideal mirror with a slightly attenuated reflection,
+not a rough glossy surface. It reflects the textured cube, floor and surroundings.
+
+The object uses `type = "sphere"`, `center = (2.5, 0.0, 0.8)` and
+`radius = 0.8`. It rests on the floor beside the cube. This native analytic
+primitive requires no triangle mesh, UV coordinates or smoothing.
+
+The path tracing integrator explicitly sets `raydepth = 5` for recursive
+specular reflections. This controls a different part of the calculation from
+`bounces = 3`, which controls diffuse path depth. All existing sampling options
+and the quality comparison script continue to work with this scene.
 
 ## Soft shadows and indirect lighting
 

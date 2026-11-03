@@ -1,4 +1,4 @@
-/* Simple C90 client: a red cube on a floor, rendered by the installed DLL.
+/* Simple C90 client: a textured cube on a floor, rendered by the installed DLL.
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 #include <stdio.h>
@@ -105,10 +105,54 @@ static int material(yafaray_Scene *scene, yafaray_ParamMap *params,
                     yafaray_ParamMapList *nodes, const char *name,
                     double r, double g, double b, size_t *id)
 {
+    yafaray_clearParamMapList(nodes);
     yafaray_clearParamMap(params);
     yafaray_setParamMapString(params, "type", "shinydiffusemat");
     yafaray_setParamMapColor(params, "color", r, g, b, 1.0);
     return succeeded(yafaray_createMaterial(scene, id, name, params, nodes));
+}
+
+static int checker_material(yafaray_Scene *scene, yafaray_ParamMap *params,
+                            yafaray_ParamMapList *nodes, size_t *id)
+{
+    size_t image_id;
+    int x, y;
+    /* Generate a 64 x 64, 8 x 8 checkerboard in RAM. Colors are linear RGB. */
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "Color");
+    yafaray_setParamMapString(params, "image_optimization", "none");
+    yafaray_setParamMapInt(params, "width", 64);
+    yafaray_setParamMapInt(params, "height", 64);
+    if(!succeeded(yafaray_createImage(scene, "checker_image", &image_id, params))) return 0;
+    for(y = 0; y < 64; ++y)
+        for(x = 0; x < 64; ++x)
+        {
+            int red = ((x / 8 + y / 8) % 2) == 0;
+            if(!yafaray_setImageColor(scene, image_id, x, y,
+                    red ? 0.75f : 0.85f, red ? 0.08f : 0.78f,
+                    red ? 0.035f : 0.62f, 1.0f)) return 0;
+        }
+
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "image");
+    yafaray_setParamMapString(params, "image_name", "checker_image");
+    yafaray_setParamMapString(params, "interpolate", "bilinear");
+    if(!succeeded(yafaray_createTexture(scene, "checker_texture", params))) return 0;
+
+    /* Cube projection uses the face normal; no UVs or external assets needed. */
+    yafaray_clearParamMapList(nodes);
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "name", "checker_mapper");
+    yafaray_setParamMapString(params, "type", "texture_mapper");
+    yafaray_setParamMapString(params, "texture", "checker_texture");
+    yafaray_setParamMapString(params, "texco", "global");
+    yafaray_setParamMapString(params, "mapping", "cube");
+    yafaray_addParamMapToList(nodes, params);
+
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "shinydiffusemat");
+    yafaray_setParamMapString(params, "diffuse_shader", "checker_mapper");
+    return succeeded(yafaray_createMaterial(scene, id, "checker", params, nodes));
 }
 
 static int mesh(yafaray_Scene *scene, yafaray_ParamMap *params, const char *name,
@@ -126,6 +170,26 @@ static int mesh(yafaray_Scene *scene, yafaray_ParamMap *params, const char *name
         if(!yafaray_addTriangle(scene, object_id, faces[i][0], faces[i][1],
                                faces[i][2], material_id)) return 0;
     return yafaray_initObject(scene, object_id, material_id);
+}
+
+static int mirror_sphere(yafaray_Scene *scene, yafaray_ParamMap *params,
+                         yafaray_ParamMapList *nodes)
+{
+    size_t material_id, object_id;
+    yafaray_clearParamMapList(nodes);
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "mirror");
+    yafaray_setParamMapColor(params, "color", 1.0, 1.0, 1.0, 1.0);
+    yafaray_setParamMapFloat(params, "reflect", 0.95);
+    if(!succeeded(yafaray_createMaterial(scene, &material_id, "mirror", params, nodes))) return 0;
+
+    /* Analytic sphere: no tessellation or mesh vertex data is necessary. */
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "sphere");
+    yafaray_setParamMapString(params, "material", "mirror");
+    yafaray_setParamMapVector(params, "center", 2.5, 0.0, 0.8);
+    yafaray_setParamMapFloat(params, "radius", 0.8);
+    return succeeded(yafaray_createObject(scene, &object_id, "mirror_sphere", params));
 }
 
 int main(int argc, char **argv)
@@ -198,12 +262,13 @@ int main(int argc, char **argv)
     monitor = yafaray_createRenderMonitor(NULL, NULL, YAFARAY_DISPLAY_CONSOLE_HIDDEN);
     if(!params || !nodes || !scene || !control || !monitor) goto cleanup;
 
-    /* Materials and geometry: no textures or external scene assets. */
-    if(!material(scene, params, nodes, "red", 0.75, 0.08, 0.035, &cube_material) ||
-       !material(scene, params, nodes, "floor", 0.55, 0.60, 0.65, &floor_material)) goto cleanup;
+    /* Texture pixels are generated in memory; no external scene assets. */
+    if(!material(scene, params, nodes, "floor", 0.55, 0.60, 0.65, &floor_material) ||
+       !checker_material(scene, params, nodes, &cube_material)) goto cleanup;
     if(!mesh(scene, params, "cube", cube, 8, cube_faces, 12, cube_material) ||
        !mesh(scene, params, "floor", floor_vertices, 4, floor_faces, 2, floor_material) ||
        !mesh(scene, params, "emitter", emitter_vertices, 4, floor_faces, 2, floor_material)) goto cleanup;
+    if(!mirror_sphere(scene, params, nodes)) goto cleanup;
 
     yafaray_clearParamMap(params);
     /* A 3 x 3 area emitter. Edge ordering points its emitting side downward. */
@@ -228,6 +293,7 @@ int main(int argc, char **argv)
     yafaray_setParamMapInt(params, "path_samples", options.path_samples);
     yafaray_setParamMapInt(params, "bounces", 3);
     yafaray_setParamMapInt(params, "russian_roulette_min_bounces", 3);
+    yafaray_setParamMapInt(params, "raydepth", 5);
     yafaray_setParamMapInt(params, "threads", options.threads);
     integrator = yafaray_createSurfaceIntegrator(logger, "path", params);
     if(!integrator) goto cleanup;
