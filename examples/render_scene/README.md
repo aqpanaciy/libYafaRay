@@ -1,7 +1,7 @@
 # Render a simple scene to TGA
 
 This standalone C90 example uses the installed libYafaRay shared library. It
-creates a red-and-cream checkerboard cube, a mirror sphere, a gray floor,
+creates a red-and-cream checkerboard cube, mirror and glass spheres, a gray floor,
 a rectangular area light, a perspective camera
 and a path tracing integrator. The renderer writes a 480 x 360 TGA image with 32
 camera samples per pixel by default. No external textures, scene files or optional image
@@ -187,7 +187,7 @@ the existing images adds a small conversion overhead to future full runs.
 ### Visual comparison: preview, baseline and quality
 
 These reference images and timings show the earlier, untextured red cube without
-the sphere. New runs use the checkerboard texture and mirror sphere described
+the spheres. New runs use the checkerboard texture and both spheres described
 below; their timings may differ.
 
 Left to right: **preview — baseline — quality**, from the same measured run
@@ -231,7 +231,7 @@ executable launches need this DLL directory and the toolchain runtimes in PATH.
 1. Create the logger, scene and parameter maps.
 2. Generate a checkerboard image in memory, create its texture and material,
    and create triangle meshes for the cube, floor and emitter, plus an analytic
-   sphere with a mirror material.
+   mirror and glass spheres as analytic primitives.
 3. Add an area light linked to the emitter mesh and a constant background.
 4. Configure path tracing, the film, anti-aliasing and perspective camera.
 5. Attach a TGA output, preprocess the scene and render.
@@ -272,10 +272,31 @@ The object uses `type = "sphere"`, `center = (2.5, 0.0, 0.8)` and
 `radius = 0.8`. It rests on the floor beside the cube. This native analytic
 primitive requires no triangle mesh, UV coordinates or smoothing.
 
-The path tracing integrator explicitly sets `raydepth = 5` for recursive
-specular reflections. This controls a different part of the calculation from
+The path tracing integrator explicitly sets `raydepth = 8` for recursive
+specular reflections and refractions. This controls a different part of the calculation from
 `bounces = 3`, which controls diffuse path depth. All existing sampling options
 and the quality comparison script continue to work with this scene.
+
+## Glass sphere
+
+`glass_sphere()` adds a second sphere with `type = "glass"` material and
+`IOR = 1.5`, a typical glass-like index of refraction. Unlike the opaque mirror,
+it transmits and bends camera rays while also reflecting its surroundings.
+Look for distortion of the cube's checkerboard through the sphere and stronger
+reflection toward its rim. Both `filter_color` and `mirror_color` are white,
+so this example uses clear, untinted glass without absorption or dispersion.
+
+The glass sphere has the same `radius = 0.8` as the mirror sphere, with
+`center = (1.6, -2.0, 0.8)`, in front of the cube and beside the mirror. Its
+placement makes the checkerboard visible through it. The camera is unchanged.
+`raydepth = 8` allows rays to enter and leave the sphere and continue reflecting
+or refracting; `bounces` still controls diffuse paths separately.
+
+For a translucent shadow, the material uses `fake_shadows = true`, together
+with integrator `transpShad = true` and `shadowDepth = 8`. These approximate
+light transmission along shadow rays. Camera-ray refraction is still computed,
+but the shadow approximation does not simulate focused caustics on the floor.
+The example does not add photon-based caustics or dispersion for this comparison.
 
 ## Soft shadows and indirect lighting
 

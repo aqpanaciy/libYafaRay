@@ -192,6 +192,28 @@ static int mirror_sphere(yafaray_Scene *scene, yafaray_ParamMap *params,
     return succeeded(yafaray_createObject(scene, &object_id, "mirror_sphere", params));
 }
 
+static int glass_sphere(yafaray_Scene *scene, yafaray_ParamMap *params,
+                        yafaray_ParamMapList *nodes)
+{
+    size_t material_id, object_id;
+    yafaray_clearParamMapList(nodes);
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "glass");
+    yafaray_setParamMapFloat(params, "IOR", 1.5);
+    yafaray_setParamMapColor(params, "filter_color", 1.0, 1.0, 1.0, 1.0);
+    yafaray_setParamMapColor(params, "mirror_color", 1.0, 1.0, 1.0, 1.0);
+    /* Approximate transmission for shadow rays; camera rays still refract. */
+    yafaray_setParamMapBool(params, "fake_shadows", YAFARAY_BOOL_TRUE);
+    if(!succeeded(yafaray_createMaterial(scene, &material_id, "glass", params, nodes))) return 0;
+
+    yafaray_clearParamMap(params);
+    yafaray_setParamMapString(params, "type", "sphere");
+    yafaray_setParamMapString(params, "material", "glass");
+    yafaray_setParamMapVector(params, "center", 1.6, -2.0, 0.8);
+    yafaray_setParamMapFloat(params, "radius", 0.8);
+    return succeeded(yafaray_createObject(scene, &object_id, "glass_sphere", params));
+}
+
 int main(int argc, char **argv)
 {
     const double cube[][3] = {
@@ -269,6 +291,7 @@ int main(int argc, char **argv)
        !mesh(scene, params, "floor", floor_vertices, 4, floor_faces, 2, floor_material) ||
        !mesh(scene, params, "emitter", emitter_vertices, 4, floor_faces, 2, floor_material)) goto cleanup;
     if(!mirror_sphere(scene, params, nodes)) goto cleanup;
+    if(!glass_sphere(scene, params, nodes)) goto cleanup;
 
     yafaray_clearParamMap(params);
     /* A 3 x 3 area emitter. Edge ordering points its emitting side downward. */
@@ -293,7 +316,9 @@ int main(int argc, char **argv)
     yafaray_setParamMapInt(params, "path_samples", options.path_samples);
     yafaray_setParamMapInt(params, "bounces", 3);
     yafaray_setParamMapInt(params, "russian_roulette_min_bounces", 3);
-    yafaray_setParamMapInt(params, "raydepth", 5);
+    yafaray_setParamMapInt(params, "raydepth", 8);
+    yafaray_setParamMapBool(params, "transpShad", YAFARAY_BOOL_TRUE);
+    yafaray_setParamMapInt(params, "shadowDepth", 8);
     yafaray_setParamMapInt(params, "threads", options.threads);
     integrator = yafaray_createSurfaceIntegrator(logger, "path", params);
     if(!integrator) goto cleanup;
