@@ -296,7 +296,9 @@ inline constexpr T mod(const T &a, const T &b) noexcept
 {
 	const T n = static_cast<T>(a / b);
 	const T result = a - n * b;
-	if(a < 0) return result + b;
+	// Exact negative multiples already have remainder zero. Adding b in that
+	// case yields an out-of-range texture index instead of wrapping to zero.
+	if(result < 0) return result + b;
 	else return result;
 }
 

@@ -494,8 +494,10 @@ Rgba ImageTexture::ewaEllipticCalculation(const Point3f &p, float ds_0, float dt
 {
 	if(mipmap_level >= mipmaps_.size())
 	{
-		const Image *image{images_.getById(image_id_).first};
-		return mipmaps_.back()->getColor({{math::mod(static_cast<int>(p[Axis::X]), image->getWidth()), math::mod(static_cast<int>(p[Axis::Y]), image->getHeight())}});
+		// The coarsest mipmap is 1x1. Coordinates reduced modulo the original
+		// image dimensions can still be 1 at a repeat boundary, reading beyond
+		// this single texel and producing arbitrary colors at grazing angles.
+		return mipmaps_.back()->getColor({{0, 0}});
 	}
 
 	const Image *image{getImageFromMipMapLevel(mipmap_level)};
