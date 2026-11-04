@@ -33,7 +33,7 @@ xmake run yafaray_mirror_tunnel mirror_tunnel.tga --aa-samples 32 --path-samples
 # Shorter reflection chain, for comparison
 xmake run yafaray_mirror_tunnel depth8.tga --ray-depth 8
 
-# Extend the chain and select render workers without rebuilding
+# Request a larger limit and select workers (see the internal cap below)
 xmake run yafaray_mirror_tunnel depth64.tga --ray-depth 64 --threads 4
 
 # Optional lossless PNG conversion using Python's standard library
@@ -45,7 +45,7 @@ python -B create_preview.py build/mirror_tunnel.tga build/mirror_tunnel.png
 | `--aa-samples N` | 16 | Film `AA_minsamples`; camera/edge sampling |
 | `--path-samples N` | 4 | Diffuse indirect-light samples |
 | `--light-samples N` | 4 | Area-light samples; shadow noise |
-| `--ray-depth N` | 32 | Integrator `raydepth`; specular reflection recursion, 1..128 |
+| `--ray-depth N` | 32 | Requested integrator `raydepth`, 1..128; also subject to the library's internal recursion cap |
 | `--threads N` | -1 | Rendering workers; -1 selects automatically |
 | `--help` | | Show usage without rendering |
 
@@ -74,10 +74,77 @@ fill on the sphere and soft shadows beneath it.
 Both mirrors use material `type=mirror`, white `color`, and `reflect=0.98`.
 Every reflection retains approximately 98% of the incoming contribution, so
 successive images gradually darken. Raising `raydepth` extends the specular
-chain; increasing diffuse `bounces` or `path_samples` is not a substitute.
+chain until the library's internal cap is reached; increasing diffuse
+`bounces` or `path_samples` is not a substitute.
 The apparent infinity is a finite render: recursion, finite mirror edges,
 and image resolution limit the visible tunnel. A dark termination may remain
 at the vanishing point when the recursion limit is reached.
+
+## Reflection depth comparison: 8, 16, 32 and 64
+
+Rendered on 4 November 2026 with identical geometry, camera, materials and
+installed OpenCV-enabled shared library: 800 x 600, AA=16, path samples=4,
+light samples=4, and 8 automatically selected workers. Run directory:
+`build/depth-comparison/20261104-084503-797`.
+
+```powershell
+# Render all four depths and create labeled PNG comparisons and timings.csv
+.\compare_depths.ps1
+
+# Recreate the comparisons from the saved TGAs without rendering again
+.\compare_depths.ps1 -ExistingRunDirectory build/depth-comparison/20261104-084503-797
+```
+
+| Requested ray depth | Renderer-only time | Launch + render + TGA save | Terminal dark region bounding box |
+| --- | --- | --- | --- |
+| 8 | 20.651 s | 21.711 s | 71 x 51 pixels |
+| 16 | 23.219 s | 24.235 s | 37 x 26 pixels |
+| 32 | 22.957 s | 24.042 s | 31 x 21 pixels |
+| 64 | 19.838 s | 20.924 s | 31 x 21 pixels |
+
+Left to right: **8 — 16 — 32 — 64**. Headings include the settings and both
+renderer-only and total elapsed time.
+
+![Reflection depths 8, 16, 32 and 64: full views](images/depth-comparison.png)
+
+The identical region `x=[440,560)`, `y=[105,205)` in each original image,
+enlarged 4x with nearest-neighbor sampling, without smoothing or retouching:
+
+![Reflection depth comparison: tunnel end at 4x](images/depth-comparison-end.png)
+
+**The noticeable black patch does not disappear at any tested depth.** At 8
+it is large; 16 reduces it substantially; 32 makes it somewhat smaller again.
+The 32 and 64 outputs have **exactly identical RGB pixels across the entire
+image**, so increasing to 64 provides no visual gain here.
+
+This plateau is explained by a second limit in the library. In
+`MonteCarloIntegrator::recursiveRaytrace`, `src/integrator/surface/integrator_montecarlo.cc`,
+the requested `raydepth` is checked first, but specular/glossy/filter recursion
+also requires **`ray_level < 20`**. Thus requesting 32 or 64 cannot extend the
+mirror chain beyond that internal limit. When recursion terminates, its
+initial zero color leaves a black end in the reflected scene. The comparison
+does not modify this library behavior.
+
+For a repeatable scene-specific size estimate, `create_depth_comparison.py`
+flood-fills the four-connected dark component containing `(510,150)` within
+the crop above, requiring all three 8-bit RGB channels to be below 5.
+Its pixel counts are **3,018 / 789 / 537 / 537** respectively; the table gives
+the inclusive bounding-box dimensions. The region is partly occluded by the
+reflected sphere, so this is not the full theoretical mirror aperture or a
+general visibility metric. The remaining approximately 31 x 21 pixel patch
+is still visible at the original 800 x 600 resolution.
+
+**Use 16 for previews and retain 32 for the longest chain available through
+this example; 64 is unnecessary with the current library.** Eliminating the
+termination would require a separate library change to the hard cap and a
+new convergence comparison, or a change to the scene. This experiment does
+not establish a depth at which the patch would become invisible without
+that cap.
+
+Times are sequential, single-run local measurements. The non-monotonic
+ordering, including 64 being faster than 32 despite identical output, should
+not be interpreted as a performance benefit from increasing recursion depth.
+The full four-render batch took about **91 seconds**, excluding PNG generation.
 
 ## Rendered result
 
