@@ -155,10 +155,11 @@ while suppressing aliasing. Neither changes the geometry or either texture perio
 
 ### Compare EWA anisotropy limits
 
-**Historical measurements:** the anisotropy sweeps below were rendered before
-the derivative-sign correction on 4 November 2026. Their images and times are
-retained as recorded, but their quality conclusions need rechecking with the
-corrected filter. See the symmetry control experiment below.
+**Historical measurements:** the 1/4/8/16 sweep below was rendered before
+the derivative-sign correction on 4 November 2026. Its images and times are
+retained as recorded, but its quality conclusions need rechecking with the
+corrected filter. The separate 16/32/64 comparison has been repeated after
+the correction; see that section and the symmetry control experiment below.
 
 `--ewa-max-anisotropy` sets the image texture parameter `ewa_max_anisotropy`
 for both the floor and ceiling, without recompiling. It only affects
@@ -231,10 +232,12 @@ timing guarantees. No colored artifacts were found in any of the four outputs.
 #### Does increasing anisotropy beyond 16 help at AA=16?
 
 The follow-up run compares **16 — 32 — 64**, left to right, with the same
-OpenCV-enabled fixed DLL, 800 x 500 scene, AA=16 and 8 detected workers.
-All three values, including 16, were rendered again on 3 November 2026;
-the timings below belong to this run rather than the earlier four-value test.
-Run directory: `build/anisotropy-comparison/20261103-220610-715`.
+OpenCV-enabled DLL with both the bounds and derivative-sign fixes, 800 x 500
+scene, AA=16 and 8 detected workers. All three values, including 16, were
+rendered again on **4 November 2026** using the installed shared library.
+The images, times and differences below replace the pre-sign-fix comparison
+from 3 November; they do not reuse its outputs.
+Run directory: `build/anisotropy-comparison/20261104-075322-073`.
 
 ```powershell
 .\compare_filters.ps1 -AnisotropyComparison -AnisotropyLimits 16,32,64 -AaSamples 16 -Threads -1
@@ -242,9 +245,9 @@ Run directory: `build/anisotropy-comparison/20261103-220610-715`.
 
 | `ewa_max_anisotropy` | Renderer-only time | Launch + render + TGA save | Relative renderer time |
 | --- | --- | --- | --- |
-| 16 | 12.020 s | 13.053 s | 1.00x |
-| 32 | 21.465 s | 22.563 s | 1.79x |
-| 64 | 33.937 s | 34.966 s | 2.82x |
+| 16 | 11.898 s | 12.923 s | 1.00x |
+| 32 | 20.122 s | 21.120 s | 1.69x |
+| 64 | 36.010 s | 36.998 s | 3.03x |
 
 ![EWA anisotropy 16, 32 and 64: complete images](images/anisotropy-high-comparison.png)
 
@@ -252,26 +255,33 @@ Identical central horizon crops at 2x enlargement, without smoothing:
 
 ![EWA anisotropy 16, 32 and 64: horizon detail at 2x](images/anisotropy-high-horizon.png)
 
-The visible gain above 16 is small in this view. Some individual distant edges
-change between 16 and 32; 32 and 64 are almost indistinguishable even in the
-enlarged crop. The nearby floor/ceiling remain effectively the same. All three
-outputs passed the scene-specific color check without invalid pixels.
+After the sign correction, the visible change above 16 is even smaller in this
+view. Some individual distant edges change subtly between 16 and 32; 32 and 64
+are visually indistinguishable in the enlarged crop. The smoothing is balanced
+on the left and right. The nearby floor/ceiling remain effectively the same.
+All three outputs passed the scene-specific color check with zero invalid pixels.
 
 For a numerical comparison of the displayed crop (original coordinates
 `x = 300..499`, `y = 190..309`, 24,000 pixels), using the saved 8-bit RGB values:
 
 | Pair | Mean absolute channel difference, on a 0..255 scale | Pixels with any channel differing by more than 2 |
 | --- | --- | --- |
-| 16 vs 32 | 0.152 | 457 / 24,000 (1.90%) |
-| 32 vs 64 | 0.0255 | 15 / 24,000 (0.063%) |
+| 16 vs 32 | 0.07521 | 88 / 24,000 (0.367%) |
+| 32 vs 64 | 0.01140 | 0 / 24,000 (0%) |
 
 These numbers measure similarity between the outputs, not error against a
 ground-truth reference. They support the visual observation that the extra
 cost buys very little visible change in this particular scene at AA=16.
+For context, before the sign correction these same crop metrics were 0.152 /
+1.90% for 16 vs 32 and 0.0255 / 0.063% for 32 vs 64. The old comparison
+included the incorrectly oriented footprint, which exaggerated the differences.
 
 **Keep 16 when this level of distant detail is needed; increasing to 32 or 64
-is not justified for routine renders of this view.** The earlier recommendation
-of 8 as a faster starting point still applies. Anisotropy is a maximum allowed
+is not justified for routine renders of this view:** 32 costs about 69% more
+renderer time, and 64 costs about three times as much as 16, with negligible
+visible benefit. The earlier 8-versus-16 recommendation comes from the historical
+sweep and has not been revalidated by this 16/32/64 run.
+Anisotropy is a maximum allowed
 footprint ratio, not a fixed sample count; raising it does not guarantee a
 visible change or a more accurate result. Other textures, camera angles,
 resolutions or AA settings may produce a different tradeoff. All times are
