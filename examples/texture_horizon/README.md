@@ -155,6 +155,11 @@ while suppressing aliasing. Neither changes the geometry or either texture perio
 
 ### Compare EWA anisotropy limits
 
+**Historical measurements:** the anisotropy sweeps below were rendered before
+the derivative-sign correction on 4 November 2026. Their images and times are
+retained as recorded, but their quality conclusions need rechecking with the
+corrected filter. See the symmetry control experiment below.
+
 `--ewa-max-anisotropy` sets the image texture parameter `ewa_max_anisotropy`
 for both the floor and ceiling, without recompiling. It only affects
 `--filter mipmap_ewa`; other filters ignore it. Fractional values such as `4.5`
@@ -276,18 +281,18 @@ single-run local measurements.
 
 All three modes were run with the **same OpenCV-enabled DLL**, 800 x 500 output,
 16 camera samples per pixel and 8 automatically detected render workers on
-3 November 2026. OpenCV 4.10.0 was built from source using TDM-GCC-64 10.3.0;
+4 November 2026. OpenCV 4.10.0 was built from source using TDM-GCC-64 10.3.0;
 libYafaRay identifies itself as `4.0.0-pre-alpha+git.g5448d81b.dirty`.
-The comparison run after the EWA bounds fixes below is
-`build/filter-comparison/20261103-211354-226`.
+The comparison run after both the EWA bounds and derivative-sign fixes below is
+`build/filter-comparison/20261104-074013-022`.
 Both mipmap modes logged 6 generated levels per texture and enabled ray
 differentials. No denoising, extra blur or color correction was applied.
 
 | Filter | Renderer-only time | Launch + render + TGA save | Observed result |
 | --- | --- | --- | --- |
-| `bilinear` | 2.661 s | 4.599 s | Sharp nearby cells, but grain/moire in the horizon band |
-| `mipmap_trilinear` | 3.241 s | 4.329 s | Horizon converges to a stable average; visible isotropic blur starts earlier |
-| `mipmap_ewa` | 7.780 s | 8.798 s | No colored bands; more distant detail survives before the pattern converges to its average |
+| `bilinear` | 2.853 s | 12.272 s | Sharp nearby cells, but grain/moire in the horizon band |
+| `mipmap_trilinear` | 4.563 s | 7.529 s | Horizon converges to a stable average; visible isotropic blur starts earlier |
+| `mipmap_ewa` | 10.155 s | 11.697 s | Symmetric smoothing; distant detail survives before converging to the average, without colored bands |
 
 Left to right: **bilinear — mipmap_trilinear — mipmap_ewa**.
 Headings display elapsed time including launch and saving, rounded to two decimals.
@@ -299,15 +304,71 @@ The same horizon region at 2x enlargement without smoothing:
 ![Horizon detail: bilinear, Trilinear and EWA](images/filter-comparison-horizon.png)
 
 **EWA now gives the best detail-preserving smoothing in this comparison.**
-It removes the colored bands after the bounds fixes, while retaining more
-visible distant cells than Trilinear. It takes about **2.9x Bilinear's**
-renderer time (2.4x Trilinear's). Trilinear is the faster, softer option, at about
-1.2x Bilinear's renderer time; Bilinear remains the aliasing reference.
+It removes the colored bands after the bounds fixes and the left/right blur
+imbalance after preserving derivative signs, while retaining more visible
+distant cells than Trilinear. It takes about **3.6x Bilinear's** renderer time
+(2.2x Trilinear's). Trilinear is the faster, softer option, at about
+1.6x Bilinear's renderer time; Bilinear remains the aliasing reference.
 Some residual patterning can still occur during the transition at finite AA
 and the default EWA anisotropy limit of 8. The fix addresses invalid memory
 reads and spurious colors, not a guarantee of perfect filtering at every angle.
-Launch/save overhead and system scheduling explain why the wall-time ordering
-can differ from renderer-only time in this short, single-run measurement.
+Wall time includes xmake startup and saving; this run had substantial startup
+overhead, particularly for Bilinear. These single-run times should not be used
+to attribute a performance change to the sign correction.
+
+#### EWA derivative signs and symmetry control
+
+The EWA implementation previously applied `std::abs` independently to all four
+UV derivatives in `ImageTexture::mipMapsEwaInterpolation`. This preserved their
+lengths but destroyed the orientation of the texture footprint. The ellipse's
+mixed coefficient is `B = -2 * (ds_dx * dt_dx + ds_dy * dt_dy)` after scaling
+to texels. On reflection its sign must change with the footprint; taking
+absolute values prevented that, producing excess contrast on the left side.
+
+The correction keeps all four derivatives signed. Length calculations already
+square the components, and the anisotropy adjustment multiplies a complete
+vector by a positive scale, so neither operation needs absolute values.
+The library was rebuilt and installed with the OpenCV CMake preset before
+rendering the control with unchanged geometry, textures, AA=16, anisotropy=8
+and 8 automatically selected workers.
+
+Left: before (3 November run `20261103-211354-226`); right: after
+(4 November run `20261104-074013-022`). Both show the same central 400 x 120
+region, enlarged 2x with nearest-neighbor sampling and no image repair.
+
+![EWA horizon before and after preserving derivative signs](images/ewa-sign-symmetry-horizon.png)
+
+Contrast below is the mean of per-row population standard deviations of the
+red channel (8-bit output), measured in mirrored regions `x=[200,400)` and
+`x=[400,600)`. Coordinates refer to the original 800 x 500 image, with Y from
+the top. Relative imbalance is `abs(L-R) / ((L+R)/2)`.
+
+| Region, Y range | Before L / R | Before imbalance | After L / R | After imbalance |
+| --- | --- | --- | --- | --- |
+| Ceiling, 190–209 | 32.314 / 31.645 | 2.09% | 31.551 / 31.645 | 0.30% |
+| Ceiling, 210–229 | 8.072 / 6.531 | 21.11% | 6.558 / 6.531 | 0.40% |
+| Floor, 270–289 | 2.824 / 1.508 | 60.73% | 1.503 / 1.508 | 0.32% |
+| Floor, 290–309 | 28.220 / 26.011 | 8.15% | 26.008 / 26.011 | 0.01% |
+
+The control confirms that the apparent extra left-side detail was real and
+caused by the incorrect footprint orientation. Correct filtering reduces that
+excess contrast and restores balanced smoothing. Exact pixel symmetry is not
+required because the checker phase and finite camera sampling differ across
+the center. The small residual contrast differences are comparable to the
+sampling differences observed with the other filters; this is a scene-specific
+diagnostic, not proof of correctness for every texture or view.
+
+To reproduce the measurements and the unlabeled before/after crop:
+
+```powershell
+python -B compare_ewa_symmetry.py build/filter-comparison/20261103-211354-226/mipmap_ewa.tga build/filter-comparison/20261104-074013-022/mipmap_ewa.tga build/ewa-symmetry.png
+```
+
+The previous EWA renderer time was 7.780 s (8.798 s including launch/save);
+the control took 10.155 s (11.697 s total). These were different sessions,
+and the reference filters also changed time, so this is not an isolated
+performance benchmark. All three new outputs passed the color-range/hue check
+with **zero invalid pixels**. The existing modulo regression test also passes.
 
 #### EWA bug and regression checks
 
