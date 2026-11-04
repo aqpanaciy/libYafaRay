@@ -453,10 +453,12 @@ Rgba ImageTexture::mipMapsEwaInterpolation(const Point3f &p, float max_anisotrop
 {
 	if(mipmaps_.empty()) return bilinearInterpolation(p);
 
-	float ds_0 = std::abs(mipmap_params->ds_dx_);
-	float ds_1 = std::abs(mipmap_params->ds_dy_);
-	float dt_0 = std::abs(mipmap_params->dt_dx_);
-	float dt_1 = std::abs(mipmap_params->dt_dy_);
+	// Preserve orientation: the ellipse's mixed term depends on derivative signs.
+	// Vector lengths below already use squares and therefore remain nonnegative.
+	float ds_0 = mipmap_params->ds_dx_;
+	float ds_1 = mipmap_params->ds_dy_;
+	float dt_0 = mipmap_params->dt_dx_;
+	float dt_1 = mipmap_params->dt_dy_;
 
 	if((ds_0 * ds_0 + dt_0 * dt_0) < (ds_1 * ds_1 + dt_1 * dt_1))
 	{
