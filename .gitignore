@@ -8,3 +8,4 @@ make*
 !/CMakePresets.json
 !/examples/texture_horizon/build_opencv.ps1
 !/examples/mirror_tunnel/build_png.ps1
+!/examples/cloud_shadows/build_jpeg.ps1

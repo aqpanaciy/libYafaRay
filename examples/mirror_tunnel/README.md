@@ -8,9 +8,9 @@ frames and a receding chain of reflected spheres.
 
 ## Build and run
 
-The installed library now includes **PNG and OpenCV**. The existing
+The installed library now includes **PNG, JPEG and OpenCV**. The existing
 `tdm-gcc64-shared-opencv` preset keeps OpenCV enabled and also enables
-`YAFARAY_WITH_PNG`. It uses static libpng 1.6.59 and zlib 1.3.2 built with
+`YAFARAY_WITH_PNG` (and JPEG for `cloud_shadows`). It uses static libpng 1.6.59 and zlib 1.3.2 built with
 the same TDM-GCC-64 compiler; no additional PNG/zlib DLLs are needed.
 
 To reproduce the dependency and library build, from the repository root:
@@ -19,6 +19,7 @@ To reproduce the dependency and library build, from the repository root:
 # Requires the OpenCV installation prepared for texture_horizon
 # (examples/texture_horizon/build_opencv.ps1 builds it if needed).
 .\examples\mirror_tunnel\build_png.ps1
+.\examples\cloud_shadows\build_jpeg.ps1
 & 'C:/Program Files/CMake/bin/cmake.exe' --preset tdm-gcc64-shared-opencv
 & 'C:/Program Files/CMake/bin/cmake.exe' --build --preset tdm-gcc64-shared-opencv --parallel 4
 & 'C:/Program Files/CMake/bin/cmake.exe' --install build/tdm-gcc64-shared-opencv

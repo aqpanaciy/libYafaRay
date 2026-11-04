@@ -117,6 +117,7 @@ From the repository root in PowerShell:
 .\examples\texture_horizon\build_opencv.ps1
 # The shared OpenCV preset now also includes native PNG support.
 .\examples\mirror_tunnel\build_png.ps1
+.\examples\cloud_shadows\build_jpeg.ps1
 $cmake = 'C:/Program Files/CMake/bin/cmake.exe'
 & $cmake --preset tdm-gcc64-shared-opencv
 & $cmake --build --preset tdm-gcc64-shared-opencv --parallel 4
