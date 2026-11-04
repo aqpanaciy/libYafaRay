@@ -155,11 +155,9 @@ while suppressing aliasing. Neither changes the geometry or either texture perio
 
 ### Compare EWA anisotropy limits
 
-**Historical measurements:** the 1/4/8/16 sweep below was rendered before
-the derivative-sign correction on 4 November 2026. Its images and times are
-retained as recorded, but its quality conclusions need rechecking with the
-corrected filter. The separate 16/32/64 comparison has been repeated after
-the correction; see that section and the symmetry control experiment below.
+Both anisotropy comparisons below were repeated on 4 November 2026 after
+the derivative-sign correction. Their images, times and recommendations use
+the corrected OpenCV-enabled shared library, including the earlier bounds fixes.
 
 `--ewa-max-anisotropy` sets the image texture parameter `ewa_max_anisotropy`
 for both the floor and ceiling, without recompiling. It only affects
@@ -196,19 +194,21 @@ pixels wide. Pass the same list when regenerating that run's images with
 To regenerate images from a completed anisotropy run without rendering again:
 
 ```powershell
-.\compare_filters.ps1 -AnisotropyComparison -ExistingRunDirectory build/anisotropy-comparison/20261103-220049-837
+.\compare_filters.ps1 -AnisotropyComparison -ExistingRunDirectory build/anisotropy-comparison/20261104-075645-552
 ```
 
-Measured on 3 November 2026 using the fixed OpenCV-enabled shared library,
+Measured on 4 November 2026 using the fixed OpenCV-enabled shared library,
 800 x 500, AA=16 and 8 automatically detected workers, with identical geometry,
-UVs, periods and materials in every render:
+UVs, periods and materials in every render. All four values were rendered again;
+these outputs replace the pre-sign-fix images and measurements from 3 November.
+Run directory: `build/anisotropy-comparison/20261104-075645-552`.
 
 | `ewa_max_anisotropy` | Renderer-only time | Launch + render + TGA save | Observed result |
 | --- | --- | --- | --- |
-| 1 | 4.987 s | 6.129 s | Broad isotropic blur; distant cell rows disappear early |
-| 4 | 6.089 s | 7.164 s | Much better distant detail with modest additional cost |
-| 8 | 7.498 s | 8.533 s | More detail survives near the horizon; useful balance |
-| 16 | 12.417 s | 13.395 s | Sharpest distant pattern in this set, with higher cost |
+| 1 | 4.195 s | 5.186 s | Broad isotropic blur; distant cell rows disappear early |
+| 4 | 6.031 s | 7.035 s | Much better distant detail; useful faster preview |
+| 8 | 8.535 s | 9.574 s | More distant cells survive; useful balance |
+| 16 | 11.437 s | 12.416 s | Clearest distant pattern in this set; a smaller additional gain |
 
 ![EWA anisotropy 1, 4, 8 and 16: complete images](images/anisotropy-comparison.png)
 
@@ -221,10 +221,25 @@ of greatest compression. This is not a count of samples or mipmap levels, and
 does not change texture frequency or AA. All four images still converge to an
 average at sufficiently small projected periods.
 
+For the displayed central crop (`x=300..499`, `y=190..309`, 24,000 pixels),
+the saved 8-bit RGB differences also show diminishing changes:
+
+| Pair | Mean absolute channel difference (0..255) | Pixels with any channel differing by more than 2 |
+| --- | --- | --- |
+| 1 vs 4 | 5.10351 | 9,108 / 24,000 (37.95%) |
+| 4 vs 8 | 0.90508 | 2,700 / 24,000 (11.25%) |
+| 8 vs 16 | 0.43361 | 1,463 / 24,000 (6.096%) |
+
+These measure change between outputs, not accuracy against a ground-truth
+reference. The corrected images have balanced smoothing on both sides.
+
 **Use 8 as the general starting point for this scene.** Limit 4 is a faster
-preview with a clear improvement over 1. Limit 16 is worthwhile when preserving
-distant cells matters: it costs about 1.66x the renderer time of 8 here, with a
-visible but smaller quality gain than the step from 1 to 4. Larger limits can
+preview with a clear improvement over 1: it takes about 29% less renderer time
+than 8. Limit 1 is useful as an isotropic-blur reference or when speed matters
+more than distant detail. Limit 16 is worthwhile when preserving distant cells
+matters: it costs about **1.34x** the renderer time of 8 here, with a visible
+but smaller quality gain than the step from 1 to 4. The corrected 16/32/64
+comparison below supports stopping at 16 for this view. Larger limits can
 retain more residual aliasing at finite AA, so sharper does not automatically
 mean a more accurate result. These are single-run measurements, not universal
 timing guarantees. No colored artifacts were found in any of the four outputs.
@@ -279,8 +294,9 @@ included the incorrectly oriented footprint, which exaggerated the differences.
 **Keep 16 when this level of distant detail is needed; increasing to 32 or 64
 is not justified for routine renders of this view:** 32 costs about 69% more
 renderer time, and 64 costs about three times as much as 16, with negligible
-visible benefit. The earlier 8-versus-16 recommendation comes from the historical
-sweep and has not been revalidated by this 16/32/64 run.
+visible benefit. The corrected 1/4/8/16 sweep above independently supports
+8 as a balanced starting point and 16 when distant detail matters; its times
+come from a separate run, so use each table's own 16 result for timing ratios.
 Anisotropy is a maximum allowed
 footprint ratio, not a fixed sample count; raising it does not guarantee a
 visible change or a more accurate result. Other textures, camera angles,
