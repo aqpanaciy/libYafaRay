@@ -23,7 +23,7 @@ typedef struct RenderOptions
 
 static void usage(const char *program)
 {
-    printf("Usage: %s [output.tga] [options]\n"
+    printf("Usage: %s [output.tga|output.png] [options]\n"
            "  --aa-samples N     Film AA_minsamples (default: 16)\n"
            "  --path-samples N   Integrator path_samples (default: 4)\n"
            "  --light-samples N  Area light samples (default: 4)\n"
@@ -229,7 +229,9 @@ int main(int argc, char **argv)
     int status = EXIT_FAILURE;
     FILE *file;
     long image_size;
-    unsigned char header[18];
+    unsigned char header[33], ending[12];
+    const char *extension;
+    int png_output;
     size_t output_length;
     int parse_result = parse_options(argc, argv, &options);
 
@@ -240,11 +242,17 @@ int main(int argc, char **argv)
     }
     output = options.output;
     output_length = strlen(output);
-    if(output_length < 4 ||
-       (strcmp(output + output_length - 4, ".tga") != 0 &&
-        strcmp(output + output_length - 4, ".TGA") != 0))
+    if(output_length < 4)
     {
-        fputs("Output filename must end with .tga or .TGA.\n", stderr);
+        fputs("Output filename must end with .tga or .png.\n", stderr);
+        return EXIT_FAILURE;
+    }
+    /* libYafaRay selects its writer using a case-sensitive extension. */
+    extension = output + output_length - 4;
+    png_output = strcmp(extension, ".png") == 0;
+    if(!png_output && strcmp(extension, ".tga") != 0)
+    {
+        fputs("Output filename must end with lowercase .tga or .png.\n", stderr);
         return EXIT_FAILURE;
     }
     if(yafaray_getVersionMajor() != YAFARAY_C_API_VERSION_MAJOR)
@@ -333,7 +341,7 @@ int main(int argc, char **argv)
     yafaray_clearParamMap(params);
     yafaray_setParamMapString(params, "image_path", output);
     yafaray_setParamMapBool(params, "alpha_channel", YAFARAY_BOOL_FALSE);
-    if(!succeeded(yafaray_createOutput(film, "tga", params))) goto cleanup;
+    if(!succeeded(yafaray_createOutput(film, "image", params))) goto cleanup;
 
     yafaray_setRenderControlForNormalStart(control);
     if(!yafaray_preprocessScene(scene, control,
@@ -354,17 +362,39 @@ int main(int argc, char **argv)
     { fclose(file); goto cleanup; }
     if(fseek(file, 0, SEEK_END) != 0) { fclose(file); goto cleanup; }
     image_size = ftell(file);
+    if(png_output)
+    {
+        if(image_size < 45 || fseek(file, -12L, SEEK_END) != 0 ||
+           fread(ending, 1, sizeof(ending), file) != sizeof(ending))
+        { fclose(file); goto cleanup; }
+    }
     fclose(file);
-    if(header[1] != 0 || header[2] != 2 ||
+    if(png_output)
+    {
+        /* Signature, IHDR size/type/dimensions and terminal IEND chunk.
+         * libYafaRay/libpng writes the PNG directly; no TGA conversion. */
+        if(memcmp(header, "\211PNG\r\n\032\n", 8) != 0 ||
+           memcmp(header + 8, "\0\0\0\015IHDR", 8) != 0 ||
+           header[16] != 0 || header[17] != 0 ||
+           header[18] * 256 + header[19] != WIDTH ||
+           header[20] != 0 || header[21] != 0 ||
+           header[22] * 256 + header[23] != HEIGHT ||
+           memcmp(ending, "\0\0\0\0IEND\256\102\140\202", 12) != 0) goto cleanup;
+    }
+    else if(header[1] != 0 || header[2] != 2 ||
        header[12] + 256 * header[13] != WIDTH ||
        header[14] + 256 * header[15] != HEIGHT ||
        (header[16] != 24 && header[16] != 32) ||
        image_size < 18L + header[0] + (long)WIDTH * HEIGHT * (header[16] / 8)) goto cleanup;
-    printf("Saved %s (%d x %d TGA).\n", output, WIDTH, HEIGHT);
+    printf("Saved %s (%d x %d %s).\n", output, WIDTH, HEIGHT, png_output ? "PNG" : "TGA");
     status = EXIT_SUCCESS;
 
 cleanup:
-    if(status != EXIT_SUCCESS) fputs("Scene rendering or TGA output failed.\n", stderr);
+    if(status != EXIT_SUCCESS)
+    {
+        fputs("Scene rendering or image output failed.\n", stderr);
+        if(png_output) fputs("PNG requires libYafaRay built with YAFARAY_WITH_PNG=ON.\n", stderr);
+    }
     if(monitor) yafaray_destroyRenderMonitor(monitor);
     if(control) yafaray_destroyRenderControl(control);
     if(film) yafaray_destroyFilm(film);

@@ -28,12 +28,16 @@
     },
     {
       "name": "tdm-gcc64-shared-opencv",
-      "displayName": "TDM-GCC-64 shared library with OpenCV (Release)",
+      "displayName": "TDM-GCC-64 shared library with OpenCV and PNG (Release)",
       "inherits": "tdm-gcc64-shared",
       "binaryDir": "${sourceDir}/build/tdm-gcc64-shared-opencv",
       "cacheVariables": {
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/tdm-gcc64-shared-opencv",
         "YAFARAY_WITH_OPENCV": "ON",
+        "YAFARAY_WITH_PNG": "ON",
+        "ZLIB_ROOT": "${sourceDir}/build/install/png-tdm-gcc64",
+        "ZLIB_USE_STATIC_LIBS": "ON",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/install/png-tdm-gcc64",
         "OpenCV_DIR": "${sourceDir}/build/install/opencv-4.10.0-tdm-gcc64",
         "OpenCV_STATIC": "ON"
       }

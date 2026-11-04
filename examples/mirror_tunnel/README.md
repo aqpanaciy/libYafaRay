@@ -8,6 +8,30 @@ frames and a receding chain of reflected spheres.
 
 ## Build and run
 
+The installed library now includes **PNG and OpenCV**. The existing
+`tdm-gcc64-shared-opencv` preset keeps OpenCV enabled and also enables
+`YAFARAY_WITH_PNG`. It uses static libpng 1.6.59 and zlib 1.3.2 built with
+the same TDM-GCC-64 compiler; no additional PNG/zlib DLLs are needed.
+
+To reproduce the dependency and library build, from the repository root:
+
+```powershell
+# Requires the OpenCV installation prepared for texture_horizon
+# (examples/texture_horizon/build_opencv.ps1 builds it if needed).
+.\examples\mirror_tunnel\build_png.ps1
+& 'C:/Program Files/CMake/bin/cmake.exe' --preset tdm-gcc64-shared-opencv
+& 'C:/Program Files/CMake/bin/cmake.exe' --build --preset tdm-gcc64-shared-opencv --parallel 4
+& 'C:/Program Files/CMake/bin/cmake.exe' --install build/tdm-gcc64-shared-opencv
+```
+
+The dependency script downloads pinned source archives from the official
+[libpng repository](https://github.com/pnggroup/libpng/tree/v1.6.59) and
+[zlib site](https://zlib.net/), checks SHA-256 hashes, builds and installs
+static libraries under `build/install/png-tdm-gcc64`, and runs zlib tests
+and the upstream `pngtest` linked to the installed static libraries.
+The libYafaRay shared-library installation stays at
+`build/install/tdm-gcc64-shared-opencv`.
+
 From this directory in PowerShell, using the existing TDM-GCC-64 installation:
 
 ```powershell
@@ -16,14 +40,32 @@ From this directory in PowerShell, using the existing TDM-GCC-64 installation:
 & C:/temp/xmake/xmake.exe run yafaray_mirror_tunnel
 ```
 
-The default output is `build/mirror_tunnel.tga`, 800 x 600. A relative output
+The default output remains `build/mirror_tunnel.tga`, 800 x 600. A relative output
 filename is resolved inside `build`, the target's run directory. Override
 `--yafaray_prefix` to use another compatible MinGW shared-library installation.
 This scene uses bilinear image filtering and does not require OpenCV; the
 default prefix selects the installation already used by the other examples.
 The library itself continues to use CMake.
 
+## Save directly to PNG or TGA
+
+Choose the writer with the output filename's **lowercase** `.png` or `.tga`
+extension. PNG is written directly by libYafaRay/libpng during output flush;
+no intermediate TGA, Python conversion, or OpenCV PNG codec is involved.
+The example rejects other extensions before rendering. PNG requires a
+PNG-enabled library; supplying an older installation without it will fail
+output verification rather than report a successful render.
+
 ```powershell
+# Direct PNG, using the default scene and quality settings
+xmake run yafaray_mirror_tunnel mirror_tunnel.png
+
+# PNG with a longer reflection chain
+xmake run yafaray_mirror_tunnel depth64.png --ray-depth 64 --aa-samples 16 --threads -1
+
+# TGA remains supported
+xmake run yafaray_mirror_tunnel mirror_tunnel.tga
+
 # Quick camera/geometry preview
 xmake run yafaray_mirror_tunnel preview.tga --aa-samples 4 --path-samples 2 --light-samples 4
 
@@ -36,7 +78,7 @@ xmake run yafaray_mirror_tunnel depth8.tga --ray-depth 8
 # Extend the chain and select workers
 xmake run yafaray_mirror_tunnel depth64.tga --ray-depth 64 --threads 4
 
-# Optional lossless PNG conversion using Python's standard library
+# Optional conversion of an existing TGA; unnecessary for direct PNG output
 python -B create_preview.py build/mirror_tunnel.tga build/mirror_tunnel.png
 ```
 
@@ -171,11 +213,22 @@ as a speed benefit from increasing depth. The three-run batch took about
 
 ## Rendered result
 
+Native PNG output was verified on 4 November 2026 using the rebuilt PNG/OpenCV
+DLL. The default PNG render completed in **20.078 seconds**. A matched PNG/TGA
+control at AA=4, path samples=2, light samples=4 produced identical RGB values
+at all 480,000 pixels. Both writers include the rendered alpha channel; their
+alpha quantization differed by at most one 8-bit level in this control.
+PNG chunk CRCs, decompression, dimensions and visual appearance were checked.
+The OpenCV regression render in `texture_horizon` with `mipmap_ewa` also passed
+and logged 6 generated mipmap levels per texture. All 16 zlib dependency tests
+and upstream `pngtest` against the static libpng build passed.
+
 Built and rendered on 4 November 2026 with TDM-GCC-64 10.3.0 and the installed
 OpenCV-enabled shared library. The final view at the default settings
 (AA=16, path samples=4, light samples=4, ray depth=32, 8 detected workers)
 took **21.078 seconds** of renderer time after removal of the hard cap. Timing varies with the machine.
-The application verified the TGA header, dimensions and pixel data size;
+The application verifies TGA headers, dimensions and pixel data size, or the
+PNG signature, IHDR dimensions and terminal IEND chunk as appropriate;
 the resulting PNG was visually checked. `--help` and rejection of AA=0 and
 ray depth=129 were also checked.
 
