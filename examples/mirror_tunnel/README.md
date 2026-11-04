@@ -33,7 +33,7 @@ xmake run yafaray_mirror_tunnel mirror_tunnel.tga --aa-samples 32 --path-samples
 # Shorter reflection chain, for comparison
 xmake run yafaray_mirror_tunnel depth8.tga --ray-depth 8
 
-# Request a larger limit and select workers (see the internal cap below)
+# Extend the chain and select workers
 xmake run yafaray_mirror_tunnel depth64.tga --ray-depth 64 --threads 4
 
 # Optional lossless PNG conversion using Python's standard library
@@ -45,7 +45,7 @@ python -B create_preview.py build/mirror_tunnel.tga build/mirror_tunnel.png
 | `--aa-samples N` | 16 | Film `AA_minsamples`; camera/edge sampling |
 | `--path-samples N` | 4 | Diffuse indirect-light samples |
 | `--light-samples N` | 4 | Area-light samples; shadow noise |
-| `--ray-depth N` | 32 | Requested integrator `raydepth`, 1..128; also subject to the library's internal recursion cap |
+| `--ray-depth N` | 32 | Integrator `raydepth`, 1..128 in this example; controls specular recursion |
 | `--threads N` | -1 | Rendering workers; -1 selects automatically |
 | `--help` | | Show usage without rendering |
 
@@ -74,84 +74,107 @@ fill on the sphere and soft shadows beneath it.
 Both mirrors use material `type=mirror`, white `color`, and `reflect=0.98`.
 Every reflection retains approximately 98% of the incoming contribution, so
 successive images gradually darken. Raising `raydepth` extends the specular
-chain until the library's internal cap is reached; increasing diffuse
-`bounces` or `path_samples` is not a substitute.
+chain; increasing diffuse `bounces` or `path_samples` is not a substitute.
+The former internal `ray_level < 20` cap has been removed. The existing
+`ray_level <= raydepth + additionaldepth` check now controls this recursion;
+`additionaldepth` is the existing per-material extension (zero in this scene).
 The apparent infinity is a finite render: recursion, finite mirror edges,
 and image resolution limit the visible tunnel. A dark termination may remain
 at the vanishing point when the recursion limit is reached.
 
-## Reflection depth comparison: 8, 16, 32 and 64
+## Reflection depth comparison after removing the hard cap
 
-Rendered on 4 November 2026 with identical geometry, camera, materials and
-installed OpenCV-enabled shared library: 800 x 600, AA=16, path samples=4,
-light samples=4, and 8 automatically selected workers. Run directory:
-`build/depth-comparison/20261104-084503-797`.
+The library no longer stops specular/glossy/filter recursion at
+`ray_level < 20`. In `MonteCarloIntegrator::recursiveRaytrace`, the enclosing
+`ray_level <= raydepth + additionaldepth` condition now provides the limit.
+The per-material `additionaldepth` behavior is preserved; it is zero for this
+scene. No camera, geometry, lighting, material, or sampling settings changed.
+
+The OpenCV-enabled shared library was rebuilt with TDM-GCC-64 10.3.0 and
+installed before rendering all three depths again on 4 November 2026.
+Output: 800 x 600, AA=16, path samples=4, light samples=4, 8 automatically
+selected workers. Run directory:
+`build/depth-comparison/20261104-085505-097`.
+
+From the repository root, rebuild/install the library:
 
 ```powershell
-# Render all four depths and create labeled PNG comparisons and timings.csv
-.\compare_depths.ps1
-
-# Recreate the comparisons from the saved TGAs without rendering again
-.\compare_depths.ps1 -ExistingRunDirectory build/depth-comparison/20261104-084503-797
+& 'C:/Program Files/CMake/bin/cmake.exe' --build --preset tdm-gcc64-shared-opencv --parallel 4
+& 'C:/Program Files/CMake/bin/cmake.exe' --install build/tdm-gcc64-shared-opencv
 ```
 
-| Requested ray depth | Renderer-only time | Launch + render + TGA save | Terminal dark region bounding box |
-| --- | --- | --- | --- |
-| 8 | 20.651 s | 21.711 s | 71 x 51 pixels |
-| 16 | 23.219 s | 24.235 s | 37 x 26 pixels |
-| 32 | 22.957 s | 24.042 s | 31 x 21 pixels |
-| 64 | 19.838 s | 20.924 s | 31 x 21 pixels |
+Then, from this example directory:
 
-Left to right: **8 — 16 — 32 — 64**. Headings include the settings and both
+```powershell
+# Render 16, 32 and 64, producing labeled PNG comparisons and timings.csv
+.\compare_depths.ps1 -Depths 16,32,64
+
+# Recreate the comparisons from saved TGAs without rendering again
+.\compare_depths.ps1 -Depths 16,32,64 -ExistingRunDirectory build/depth-comparison/20261104-085505-097
+
+# Other distinct depth lists are supported, in the supplied order
+.\compare_depths.ps1 -Depths 8,16,32,64
+```
+
+| Ray depth | Renderer-only time | Launch + render + TGA save | Terminal dark region bounding box | Near-black pixels |
+| --- | --- | --- | --- | --- |
+| 16 | 20.461 s | 22.657 s | 37 x 26 pixels | 789 |
+| 32 | 21.078 s | 22.267 s | 18 x 13 pixels | 184 |
+| 64 | 20.345 s | 21.322 s | 9 x 6 pixels | 41 |
+
+Left to right: **16 — 32 — 64**. Headings include settings and both
 renderer-only and total elapsed time.
 
-![Reflection depths 8, 16, 32 and 64: full views](images/depth-comparison.png)
+![Reflection depths 16, 32 and 64 without the hard cap](images/depth-comparison.png)
 
-The identical region `x=[440,560)`, `y=[105,205)` in each original image,
+The identical region `x=[440,560)`, `y=[105,205)` from each original image,
 enlarged 4x with nearest-neighbor sampling, without smoothing or retouching:
 
-![Reflection depth comparison: tunnel end at 4x](images/depth-comparison-end.png)
+![Tunnel end at 4x after removing the hard cap](images/depth-comparison-end.png)
 
-**The noticeable black patch does not disappear at any tested depth.** At 8
-it is large; 16 reduces it substantially; 32 makes it somewhat smaller again.
-The 32 and 64 outputs have **exactly identical RGB pixels across the entire
-image**, so increasing to 64 provides no visual gain here.
+**Depth 64 substantially reduces the black termination, but does not eliminate
+it.** It is now a small approximately 9 x 6 pixel mark in the original image,
+which is less prominent in the full view but still visible when inspected
+and particularly in the enlarged crop. Depth 32 has a more obvious 18 x 13
+pixel termination; depth 16 leaves a conspicuous 37 x 26 pixel patch.
+None of these tests establishes a depth at which the mark disappears entirely.
 
-This plateau is explained by a second limit in the library. In
-`MonteCarloIntegrator::recursiveRaytrace`, `src/integrator/surface/integrator_montecarlo.cc`,
-the requested `raydepth` is checked first, but specular/glossy/filter recursion
-also requires **`ray_level < 20`**. Thus requesting 32 or 64 cannot extend the
-mirror chain beyond that internal limit. When recursion terminates, its
-initial zero color leaves a black end in the reflected scene. The comparison
-does not modify this library behavior.
+The earlier capped run (`20261104-084503-797`) produced identical images at
+32 and 64, with a 31 x 21 pixel terminal region at both settings. After the
+change, 32 and 64 differ, and their terminal regions continue shrinking.
+As a control, the new depth-16 image is **RGB-identical** to the old depth-16
+image, confirming unchanged behavior below the former internal cap.
+These checks use the decoded RGB pixels, not TGA metadata or timestamps.
 
 For a repeatable scene-specific size estimate, `create_depth_comparison.py`
-flood-fills the four-connected dark component containing `(510,150)` within
-the crop above, requiring all three 8-bit RGB channels to be below 5.
-Its pixel counts are **3,018 / 789 / 537 / 537** respectively; the table gives
-the inclusive bounding-box dimensions. The region is partly occluded by the
-reflected sphere, so this is not the full theoretical mirror aperture or a
-general visibility metric. The remaining approximately 31 x 21 pixel patch
-is still visible at the original 800 x 600 resolution.
+finds four-connected components with all three 8-bit RGB channels below 5
+inside the displayed crop. It excludes components touching the crop edges
+and selects the largest component intersecting the vanishing-point region
+`x=[500,525)`, `y=[145,170)`. This excludes nearby floor shadows and remains
+valid when the shrinking termination no longer contains the old fixed seed.
+The table reports inclusive bounding-box dimensions. The reflected sphere
+partly occludes the region; this is not the full theoretical mirror aperture
+or a general visibility score.
 
-**Use 16 for previews and retain 32 for the longest chain available through
-this example; 64 is unnecessary with the current library.** Eliminating the
-termination would require a separate library change to the hard cap and a
-new convergence comparison, or a change to the scene. This experiment does
-not establish a depth at which the patch would become invisible without
-that cap.
+**Use 16 for previews, 32 for a longer tunnel, and 64 when reducing the dark
+end matters.** For this particular scene, 64 provides the best result of the
+three tested depths. The example still accepts depths up to 128; deeper
+settings have not been measured here. Higher recursion can cost considerably
+more in other scenes, especially with glossy branching; these timings do not
+establish a general depth-independent render cost.
 
-Times are sequential, single-run local measurements. The non-monotonic
-ordering, including 64 being faster than 32 despite identical output, should
-not be interpreted as a performance benefit from increasing recursion depth.
-The full four-render batch took about **91 seconds**, excluding PNG generation.
+Times are sequential single-run local measurements. Most pixels do not need
+very deep recursion, while the deepest chain occupies a small screen region.
+The similar times and their non-monotonic ordering should not be interpreted
+as a speed benefit from increasing depth. The three-run batch took about
+**66 seconds**, excluding PNG generation and the library rebuild.
 
 ## Rendered result
 
 Built and rendered on 4 November 2026 with TDM-GCC-64 10.3.0 and the installed
 OpenCV-enabled shared library. The final view at the default settings
 (AA=16, path samples=4, light samples=4, ray depth=32, 8 detected workers)
-took **22.120 seconds** of renderer time. Timing varies with the machine.
+took **21.078 seconds** of renderer time after removal of the hard cap. Timing varies with the machine.
 The application verified the TGA header, dimensions and pixel data size;
 the resulting PNG was visually checked. `--help` and rejection of AA=0 and
 ray depth=129 were also checked.

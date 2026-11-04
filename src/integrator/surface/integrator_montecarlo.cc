@@ -710,7 +710,8 @@ std::pair<Rgb, float> MonteCarloIntegrator::recursiveRaytrace(RandomGenerator &r
 			alpha += dispersive_alpha;
 			++alpha_count;
 		}
-		if(ray_level < 20 && bsdfs.has(BsdfFlags::Glossy | BsdfFlags::Specular | BsdfFlags::Filter))
+		// The enclosing raydepth/additionaldepth check controls recursion.
+		if(bsdfs.has(BsdfFlags::Glossy | BsdfFlags::Specular | BsdfFlags::Filter))
 		{
 			// glossy reflection with recursive raytracing:
 			if(bsdfs.has(BsdfFlags::Glossy))
